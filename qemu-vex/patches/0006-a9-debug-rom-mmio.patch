@@ -1,0 +1,335 @@
+diff --git a/target/arm/cpu.h b/target/arm/cpu.h
+index c0492c8..3bc742f 100644
+--- a/target/arm/cpu.h
++++ b/target/arm/cpu.h
+@@ -2473,6 +2473,7 @@ FIELD(TBFLAG_ANY, ALIGN_MEM, 10, 1)
+ FIELD(TBFLAG_ANY, PSTATE__IL, 11, 1)
+ FIELD(TBFLAG_ANY, FGT_ACTIVE, 12, 1)
+ FIELD(TBFLAG_ANY, FGT_SVC, 13, 1)
++FIELD(TBFLAG_ANY, VEX_MISMATCH_STEP, 14, 1) /* vexide/v5gdb A9 mismatch bp */
+ 
+ /*
+  * Bit usage when in AArch32 state, both A- and M-profile.
+diff --git a/target/arm/debug_helper.c b/target/arm/debug_helper.c
+index 8477ca5..1ee0bc8 100644
+--- a/target/arm/debug_helper.c
++++ b/target/arm/debug_helper.c
+@@ -171,6 +171,32 @@ static void dbgclaimclr_write(CPUARMState *env, const ARMCPRegInfo *ri,
+     env->cp15.dbgclaim &= ~(value & 0xFF);
+ }
+ 
++/*
++ * VEX V5 / Zynq-7000 Cortex-A9: expose a valid memory-mapped debug interface
++ * address so self-hosted debuggers (e.g. vexide/v5gdb) can locate the APB
++ * debug register bank. Upstream QEMU RAZes these because it has no MMIO debug
++ * component; the vex-v5 machine maps a backing bank at 0xF8890000 (CPU0) /
++ * 0xF8892000 (CPU1), matching real Zynq-7000 silicon.
++ */
++static uint64_t vex_dbgdrar_read(CPUARMState *env, const ARMCPRegInfo *ri)
++{
++    ARMCPU *cpu = env_archcpu(env);
++    if ((cpu->midr & 0xff0ffff0) == 0x410fc090) {
++        return 0xF8800000ULL | 0x3;       /* CoreSight ROM base, Valid */
++    }
++    return 0;
++}
++
++static uint64_t vex_dbgdsar_read(CPUARMState *env, const ARMCPRegInfo *ri)
++{
++    ARMCPU *cpu = env_archcpu(env);
++    if ((cpu->midr & 0xff0ffff0) == 0x410fc090) {
++        uint32_t aff0 = cpu->mp_affinity & 0xff;   /* 0 -> CPU0, 1 -> CPU1 */
++        return (uint64_t)(((0x90000U + 0x2000U * aff0) & 0xfffff000U) | 0x3U);
++    }
++    return 0;
++}
++
+ static const ARMCPRegInfo debug_cp_reginfo[] = {
+     /*
+      * DBGDRAR, DBGDSAR: always RAZ since we don't implement memory mapped
+@@ -181,14 +207,14 @@ static const ARMCPRegInfo debug_cp_reginfo[] = {
+      */
+     { .name = "DBGDRAR", .cp = 14, .crn = 1, .crm = 0, .opc1 = 0, .opc2 = 0,
+       .access = PL0_R, .accessfn = access_tdra,
+-      .type = ARM_CP_CONST | ARM_CP_NO_GDB, .resetvalue = 0 },
++      .type = ARM_CP_NO_GDB | ARM_CP_NO_RAW, .readfn = vex_dbgdrar_read },
+     { .name = "MDRAR_EL1", .state = ARM_CP_STATE_AA64,
+       .opc0 = 2, .opc1 = 0, .crn = 1, .crm = 0, .opc2 = 0,
+       .access = PL1_R, .accessfn = access_tdra,
+       .type = ARM_CP_CONST, .resetvalue = 0 },
+     { .name = "DBGDSAR", .cp = 14, .crn = 2, .crm = 0, .opc1 = 0, .opc2 = 0,
+       .access = PL0_R, .accessfn = access_tdra,
+-      .type = ARM_CP_CONST | ARM_CP_NO_GDB, .resetvalue = 0 },
++      .type = ARM_CP_NO_GDB | ARM_CP_NO_RAW, .readfn = vex_dbgdsar_read },
+     /* Monitor debug system control register; the 32-bit alias is DBGDSCRext. */
+     { .name = "MDSCR_EL1", .state = ARM_CP_STATE_BOTH,
+       .cp = 14, .opc0 = 2, .opc1 = 0, .crn = 0, .crm = 2, .opc2 = 2,
+diff --git a/target/arm/tcg/debug.c b/target/arm/tcg/debug.c
+index 528d288..1e984be 100644
+--- a/target/arm/tcg/debug.c
++++ b/target/arm/tcg/debug.c
+@@ -772,3 +772,133 @@ vaddr arm_adjust_watchpoint_address(CPUState *cs, vaddr addr, int len)
+ }
+ 
+ #endif /* !CONFIG_USER_ONLY */
++
++/*
++ * VEX V5 / Zynq-7000: memory-mapped (APB) debug register bank access for the
++ * Cortex-A9. Real silicon exposes the debug register file both via CP14 and as
++ * a memory-mapped bank; QEMU only implements the CP14 view. vexide/v5gdb drives
++ * hardware breakpoints and single-step through the memory-mapped bank, so route
++ * the register offsets it uses to the CPU cp15 debug state and QEMU's existing
++ * breakpoint machinery. Writes run in vCPU context (a guest store to the bank),
++ * exactly like the CP14 writefns, so calling hw_breakpoint_update() here is
++ * safe.
++ */
++void arm_cpu_debug_mmio_write(ARMCPU *cpu, hwaddr offset, uint64_t value)
++{
++    CPUARMState *env = &cpu->env;
++    int n;
++
++    switch (offset) {
++    case 0x100 ... 0x13c:                 /* DBGBVR<n> */
++        n = (offset - 0x100) >> 2;
++        if (n < arm_num_brps(cpu)) {
++            env->cp15.dbgbvr[n] = value;
++            hw_breakpoint_update(cpu, n);
++        }
++        break;
++    case 0x140 ... 0x17c:                 /* DBGBCR<n> */
++        n = (offset - 0x140) >> 2;
++        if (n < arm_num_brps(cpu)) {
++            /* BAS[3]/[1] are read-only copies of BAS[2]/[0]. */
++            value = deposit64(value, 6, 1, extract64(value, 5, 1));
++            value = deposit64(value, 8, 1, extract64(value, 7, 1));
++            env->cp15.dbgbcr[n] = value;
++            hw_breakpoint_update(cpu, n);
++        }
++        break;
++    case 0x180 ... 0x1bc:                 /* DBGWVR<n> */
++        n = (offset - 0x180) >> 2;
++        if (n < arm_num_wrps(cpu)) {
++            env->cp15.dbgwvr[n] = value;
++            hw_watchpoint_update(cpu, n);
++        }
++        break;
++    case 0x1c0 ... 0x1fc:                 /* DBGWCR<n> */
++        n = (offset - 0x1c0) >> 2;
++        if (n < arm_num_wrps(cpu)) {
++            env->cp15.dbgwcr[n] = value;
++            hw_watchpoint_update(cpu, n);
++        }
++        break;
++    case 0x088:                           /* DBGDSCRext: only MDE writable */
++        env->cp15.mdscr_el1 = deposit64(env->cp15.mdscr_el1, 15, 1,
++                                        extract64(value, 15, 1));
++        break;
++    default:
++        break;                            /* lock / OS / ID regs: WI */
++    }
++
++    arm_rebuild_hflags(&cpu->env);
++}
++
++uint64_t arm_cpu_debug_mmio_read(ARMCPU *cpu, hwaddr offset)
++{
++    CPUARMState *env = &cpu->env;
++    int n;
++
++    switch (offset) {
++    case 0x000:                           /* DBGDIDR */
++        return cpu->isar.dbgdidr;
++    case 0x088:                           /* DBGDSCRext */
++        return env->cp15.mdscr_el1;
++    case 0x100 ... 0x13c:
++        n = (offset - 0x100) >> 2;
++        return n < arm_num_brps(cpu) ? env->cp15.dbgbvr[n] : 0;
++    case 0x140 ... 0x17c:
++        n = (offset - 0x140) >> 2;
++        return n < arm_num_brps(cpu) ? env->cp15.dbgbcr[n] : 0;
++    case 0x180 ... 0x1bc:
++        n = (offset - 0x180) >> 2;
++        return n < arm_num_wrps(cpu) ? env->cp15.dbgwvr[n] : 0;
++    case 0x1c0 ... 0x1fc:
++        n = (offset - 0x1c0) >> 2;
++        return n < arm_num_wrps(cpu) ? env->cp15.dbgwcr[n] : 0;
++    case 0xfb4:                           /* DBGLSR: software lock unimplemented */
++        return 0;
++    default:
++        return 0;
++    }
++}
++
++/*
++ * VEX V5: runtime check for ARMv7 address-mismatch breakpoints. Called at the
++ * start of each instruction while mismatch stepping is active (see
++ * arm_mismatch_step_active() / translate.c). Fires a guest breakpoint debug
++ * exception when the executing PC is not the instruction the mismatch
++ * breakpoint covers, matching the semantics vexide/v5gdb relies on for
++ * single-step, continue-past-breakpoint and Ctrl-C halt.
++ */
++void HELPER(vex_mismatch_check)(CPUARMState *env, uint32_t pc)
++{
++    ARMCPU *cpu = env_archcpu(env);
++    int n, brps = arm_num_brps(cpu);
++    int mode = env->uncached_cpsr & CPSR_M;
++
++    if (mode != ARM_CPU_MODE_USR && mode != ARM_CPU_MODE_SVC
++        && mode != ARM_CPU_MODE_SYS) {
++        return;
++    }
++
++    for (n = 0; n < brps; n++) {
++        uint64_t bcr = env->cp15.dbgbcr[n];
++        uint64_t bvr = env->cp15.dbgbvr[n];
++        vaddr addr;
++        int bas;
++
++        if (!extract64(bcr, 0, 1) || extract64(bcr, 20, 4) != 4) {
++            continue;   /* not an enabled address-mismatch breakpoint */
++        }
++
++        bas = extract64(bcr, 5, 4);
++        addr = bvr & ~3ULL;
++        if (bas == 0xc) {
++            addr += 2;
++        }
++
++        if (pc != addr) {
++            env->exception.fsr = arm_debug_exception_fsr(env);
++            env->exception.vaddress = 0;
++            raise_exception_debug(env, EXCP_PREFETCH_ABORT, syn_breakpoint(0));
++        }
++    }
++}
+diff --git a/target/arm/tcg/helper-defs.h b/target/arm/tcg/helper-defs.h
+index 0077aeb..c2e7e51 100644
+--- a/target/arm/tcg/helper-defs.h
++++ b/target/arm/tcg/helper-defs.h
+@@ -51,6 +51,7 @@ DEF_HELPER_3(exception_with_syndrome, noreturn, env, i32, i32)
+ DEF_HELPER_4(exception_with_syndrome_el, noreturn, env, i32, i32, i32)
+ DEF_HELPER_2(exception_bkpt_insn, noreturn, env, i32)
+ DEF_HELPER_2(exception_swstep, noreturn, env, i32)
++DEF_HELPER_2(vex_mismatch_check, void, env, i32)
+ DEF_HELPER_2(exception_pc_alignment, noreturn, env, vaddr)
+ DEF_HELPER_1(setend, void, env)
+ DEF_HELPER_2(wfi, void, env, i32)
+diff --git a/target/arm/tcg/hflags.c b/target/arm/tcg/hflags.c
+index 0716ca9..a56f20a 100644
+--- a/target/arm/tcg/hflags.c
++++ b/target/arm/tcg/hflags.c
+@@ -88,6 +88,35 @@ static CPUARMTBFlags rebuild_hflags_common(CPUARMState *env, int fp_el,
+     return flags;
+ }
+ 
++/*
++ * VEX V5 / vexide-v5gdb: true if an ARMv7 address-mismatch hardware breakpoint
++ * (DBGBCR.BT == 0b0100, enabled) is active and would generate debug exceptions
++ * in the current mode. Used to force per-instruction stepping so the mismatch
++ * can fire on the next instruction (QEMU has no native mismatch-bp support).
++ * Gated to v5gdb's privilege filter (User/System/Supervisor) so the debugger's
++ * own abort/IRQ-mode handler code is not single-stepped.
++ */
++static bool arm_mismatch_step_active(CPUARMState *env)
++{
++    int n, brps;
++
++    if (is_a64(env) || arm_feature(env, ARM_FEATURE_M)) {
++        return false;
++    }
++    if (extract32(env->cp15.mdscr_el1, 15, 1) == 0
++        || !arm_generate_debug_exceptions(env)) {
++        return false;
++    }
++    brps = arm_num_brps(env_archcpu(env));
++    for (n = 0; n < brps; n++) {
++        uint64_t bcr = env->cp15.dbgbcr[n];
++        if (extract64(bcr, 0, 1) && extract64(bcr, 20, 4) == 4) {
++            return true;
++        }
++    }
++    return false;
++}
++
+ static CPUARMTBFlags rebuild_hflags_common_32(CPUARMState *env, int fp_el,
+                                               ARMMMUIdx mmu_idx,
+                                               CPUARMTBFlags flags)
+@@ -102,6 +131,10 @@ static CPUARMTBFlags rebuild_hflags_common_32(CPUARMState *env, int fp_el,
+     }
+     DP_TBFLAG_A32(flags, NS, !access_secure_reg(env));
+ 
++    if (arm_mismatch_step_active(env)) {
++        DP_TBFLAG_ANY(flags, VEX_MISMATCH_STEP, 1);
++    }
++
+     return rebuild_hflags_common(env, fp_el, mmu_idx, flags);
+ }
+ 
+diff --git a/target/arm/tcg/translate.c b/target/arm/tcg/translate.c
+index 86c3c30..85c8c3d 100644
+--- a/target/arm/tcg/translate.c
++++ b/target/arm/tcg/translate.c
+@@ -6461,6 +6461,7 @@ static void arm_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
+      */
+     dc->ss_active = EX_TBFLAG_ANY(tb_flags, SS_ACTIVE);
+     dc->pstate_ss = EX_TBFLAG_ANY(tb_flags, PSTATE__SS);
++    dc->mismatch_step = EX_TBFLAG_ANY(tb_flags, VEX_MISMATCH_STEP);
+     dc->is_ldex = false;
+ 
+     dc->page_start = dc->base.pc_first & TARGET_PAGE_MASK;
+@@ -6469,6 +6470,10 @@ static void arm_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
+     if (dc->ss_active) {
+         dc->base.max_insns = 1;
+     }
++    /* ARMv7 mismatch-breakpoint stepping also runs one insn per TB. */
++    if (dc->mismatch_step) {
++        dc->base.max_insns = 1;
++    }
+ 
+     /* ARM is a fixed-length ISA.  Bound the number of insns to execute
+        to those left on the page.  */
+@@ -6611,6 +6616,17 @@ static void arm_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
+         return;
+     }
+ 
++    /*
++     * VEX V5: ARMv7 address-mismatch breakpoint (vexide/v5gdb single-step).
++     * Take a guest breakpoint if this instruction's PC isn't the one the
++     * mismatch breakpoint covers. Checked at runtime against live DBGBVR.
++     */
++    if (dc->mismatch_step) {
++        dc->pc_curr = pc;
++        gen_update_pc(dc, 0);
++        gen_helper_vex_mismatch_check(tcg_env, tcg_constant_i32(pc));
++    }
++
+     if (pc & 3) {
+         /*
+          * PC alignment fault.  This has priority over the instruction abort
+@@ -6707,6 +6723,13 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
+         return;
+     }
+ 
++    /* VEX V5: ARMv7 mismatch-breakpoint single-step (see arm path above). */
++    if (dc->mismatch_step) {
++        dc->pc_curr = pc;
++        gen_update_pc(dc, 0);
++        gen_helper_vex_mismatch_check(tcg_env, tcg_constant_i32(pc));
++    }
++
+     dc->pc_curr = pc;
+     insn = arm_lduw_code(env, &dc->base, pc, dc->sctlr_b);
+     is_16bit = thumb_insn_is_16bit(dc, dc->base.pc_next, insn);
+diff --git a/target/arm/tcg/translate.h b/target/arm/tcg/translate.h
+index a3d0315..6aa057d 100644
+--- a/target/arm/tcg/translate.h
++++ b/target/arm/tcg/translate.h
+@@ -129,6 +129,8 @@ typedef struct DisasContext {
+      */
+     bool ss_active;
+     bool pstate_ss;
++    /* vexide/v5gdb ARMv7 mismatch-breakpoint single-step is active. */
++    bool mismatch_step;
+     /* True if the insn just emitted was a load-exclusive instruction
+      * (necessary for syndrome information for single step exceptions),
+      * ie A64 LDX*, LDAX*, A32/T32 LDREX*, LDAEX*.

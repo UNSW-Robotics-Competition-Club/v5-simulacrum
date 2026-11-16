@@ -1,0 +1,9 @@
+# A full competition robot (port map used by the example programs):
+#   1-6 drive (blue, right side reversed in code)   7 intake (green)
+#   8 optical (at the intake)   9 GPS   10 IMU   11 radio
+#   12 rotation (2.75" tracking wheel)   13 distance (front)   14 AI Vision
+--drive 1,2,3:4,5,6:blue
+--motor 7:green --intake 7
+--optical 8 --gps 9 --imu 10 --radio 11
+--rotation 12:track --distance 13 --aivision 14
+--view 8765

@@ -1,0 +1,26 @@
+V5 Simulacrum
+Copyright (C) 2026 V5 Simulacrum contributors
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU Lesser General Public License as published by the
+Free Software Foundation, either version 3 of the License, or (at your
+option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+details.
+
+The GNU Lesser General Public License is in LICENSE; it adds to the
+GNU General Public License in COPYING.
+
+---
+
+Exceptions (each directory has its own license file):
+
+- qemu-vex/: GNU General Public License, version 2 or (at your option) any
+  later version, like the QEMU code it extends. See qemu-vex/COPYING.
+- sdk/: MIT. It is generated from vexide's vex-sdk (MIT). See sdk/LICENSE.
+- programs/: MIT No Attribution (MIT-0), so you can copy the example and
+  template programs into your own robot code without keeping a notice.
+  See programs/LICENSE.

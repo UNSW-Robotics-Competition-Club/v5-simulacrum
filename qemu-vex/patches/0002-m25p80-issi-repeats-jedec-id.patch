@@ -1,0 +1,20 @@
+m25p80: ISSI parts repeat the JEDEC ID while clocked
+
+VEXos reads the SPI0 event-log flash (ISSI IS25LP016D) with 0x9F + 6 dummy
+bytes and takes the ID from the last three (flashSpiReadJedecId @0x010324B0
+reads rx[4..6]). That only works if the part repeats MF/ID15-8/ID7-0, so
+model it that way for ISSI instead of padding with zeros. (Inferred from the
+firmware, not from a datasheet.)
+
+--- a/hw/block/m25p80.c
++++ b/hw/block/m25p80.c
+@@ -1423,7 +1423,8 @@ static void decode_new_cmd(Flash *s, uint32_t value)
+                 s->data[i] = s->pi->id[i];
+             }
+             for (; i < SPI_NOR_MAX_ID_LEN; i++) {
+-                s->data[i] = 0;
++                s->data[i] = get_man(s) == MAN_ISSI ?
++                             s->pi->id[i % s->pi->id_len] : 0;
+             }
+ 
+             s->len = SPI_NOR_MAX_ID_LEN;

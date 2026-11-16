@@ -1,0 +1,12 @@
+# UI testing: the competition robot plugged into a field controller, as at an
+# event. The brain starts disabled, so pre-auton screens (an autonomous
+# selector on the brain or controller screen) run as they would while the
+# robot waits on the field. The field-control page (http://localhost:8765/field)
+# opens in the browser: START runs a timed match, Manual switches it yourself.
+#   V5Sim ui-test path\to\program.bin
+# Port map as in competition.args:
+#   1-6 drive (blue, right side reversed in code)   7 intake (green)
+#   8 optical   9 GPS   10 IMU   11 radio (wireless controller)
+#   12 rotation (2.75" tracking wheel)   13 distance (front)   14 AI Vision
+@robots/competition.args
+--competition field

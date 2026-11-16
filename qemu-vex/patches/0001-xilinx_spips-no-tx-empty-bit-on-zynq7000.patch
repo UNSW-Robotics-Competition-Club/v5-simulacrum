@@ -1,0 +1,17 @@
+xilinx_spips: don't report IXR_TX_FIFO_EMPTY on the legacy SPI/QSPI
+
+Bit 8 (TX FIFO empty) exists only in the ZynqMP GQSPI. The Zynq-7000
+SPI/QSPI interrupt status has bits 0-6 (UG585 B.30), and the Xilinx
+XSpiPs_SelfTest requires SR == 0x4 right after reset, so VEXos's SPI
+event-log flash init failed and CPU0 hung in an assert.
+
+--- a/hw/ssi/xilinx_spips.c
++++ b/hw/ssi/xilinx_spips.c
+@@ -324,7 +324,6 @@ static void xilinx_spips_update_ixr(XilinxSPIPS *s)
+             (s->rx_fifo.num >= s->regs[R_RX_THRES] ?
+                                     IXR_RX_FIFO_NOT_EMPTY : 0) |
+             (fifo8_is_full(&s->tx_fifo) ? IXR_TX_FIFO_FULL : 0) |
+-            (fifo8_is_empty(&s->tx_fifo) ? IXR_TX_FIFO_EMPTY : 0) |
+             (s->tx_fifo.num < s->regs[R_TX_THRES] ? IXR_TX_FIFO_NOT_FULL : 0);
+     }
+     int new_irqline = !!(s->regs[R_INTR_MASK] & s->regs[R_INTR_STATUS] &

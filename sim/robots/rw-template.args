@@ -1,0 +1,20 @@
+# RW-Template's default custom/src/robot-config.cpp (github.com/richardbwang/
+# RW-Template, the template SRA's V5RC autonomous unit uses), as a robot:
+#   1-6 drive, blue; reversed in code: left 1, 2 and right 6 -> mounts below
+#   7 inertial   8 optical   9 distance (example, front)
+#   12/13/14/15 distance front/left/right/back at the centre (offsets 0)
+#   16, 17 arm motors (green, 16 reversed)   18 intake (green, reversed)
+#   20 intake distance (front)
+# Trackers (10, 11) are off in its defaults and not attached. Its
+# controller is the primary (radio) one: a radio on port 21,
+# in place of clamp_distance, which the default autos don't use.
+--drive 1r,2r,3:4r,5r,6:blue
+--wheel-diameter 3.17 --track 12.3   # its wheel_distance_in / distance_between_wheels
+--imu 7 --optical 8 --distance 9
+--distance 12:front:0:0 --distance 13:left:0:0
+--distance 14:right:0:0 --distance 15:back:0:0
+--motor 16r:green --motor 17:green
+--motor 18r:green --intake 18
+--distance 20:front:0:0     # intake_distance (asyncExample stops on < 50 mm)
+--radio 21
+--view 8765

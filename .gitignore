@@ -1,0 +1,23 @@
+# VEX firmware: downloaded by scripts/fetch_firmware.sh, never commit
+/extracted/
+/raw/
+*.vexos
+
+# Private material lives in a separate repo cloned here
+/private/
+
+# Build outputs
+build/
+bin/
+*.bin
+*.elf
+*.o
+*.d
+*.map
+__pycache__/
+*.pyc
+
+# Local tool settings
+.claude/
+.gstack/
+.vscode/settings.json

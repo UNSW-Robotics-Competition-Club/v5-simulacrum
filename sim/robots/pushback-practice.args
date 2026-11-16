@@ -1,0 +1,4 @@
+# The competition robot on a field scattered with 24 red/blue blocks.
+# Add goals for scoring with --goals FILE.json (no official layout built in).
+@robots/competition.args
+--blocks random:24:7

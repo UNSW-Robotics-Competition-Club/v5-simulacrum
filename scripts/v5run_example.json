@@ -1,0 +1,8 @@
+[
+ {"name": "intake-builtin", "program": "../programs/vexcode_intake/build/vexcode_intake.bin",
+  "robot": "--drive 1,2,3:4,5,6:blue --motor 7:green --intake 7:4 --blocks ../programs/vexcode_intake/blocks.json --goals ../programs/vexcode_intake/goals.json",
+  "seconds": 20, "settle": 2, "expect": "3:37.6:197", "tol": "3:10", "min_score": 10},
+ {"name": "intake-mujoco", "program": "../programs/vexcode_intake/build/vexcode_intake.bin",
+  "robot": "--drive 1,2,3:4,5,6:blue --motor 7:green --intake 7:4 --blocks ../programs/vexcode_intake/blocks.json --goals ../programs/vexcode_intake/goals.json --physics mujoco",
+  "seconds": 20, "settle": 2, "expect": "3:37.6:197", "tol": "3:10"}
+]

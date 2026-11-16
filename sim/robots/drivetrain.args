@@ -1,0 +1,7 @@
+# Basic competition drivetrain: 6 blue motors (right side reversed in code),
+# an Inertial Sensor and a VEXnet radio (wireless controller) driven from the
+# field view.
+--drive 1,2,3:4,5,6:blue
+--imu 10
+--radio 11
+--view 8765

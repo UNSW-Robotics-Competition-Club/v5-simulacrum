@@ -1,0 +1,50 @@
+xilinx_timer: clearing ENT stops the counter; TINT is write-1-to-clear
+
+QEMU only looked at TCSR.ENT to start a counter. Writing ENT=0 left the
+ptimer running, and every TCSR write cleared TINT whatever its bit said.
+
+VEXos MainLoop hits this at boot: XTmrCtr_SelfTest (0x010776C8) loads 0,
+sets ENT, waits for the count to move, then writes ENT=0. The counter kept
+running, sysTimerSetup then set ENIT|ARHT and the 1 s reload, and ~43 s
+later AXI timer 0 started interrupting (INTC0 source 26) once a second for
+good, so the callback at 0x01034070 printed "tmr1 0, cntr N" forever. On
+hardware the timer stays stopped unless debug command 5 starts it
+("StartTimer 0").
+
+Now ENT only starts the counter on a 0->1 edge (as in hardware, setting it
+again does not reload), ENT=0 stops it, and writing TINT=0 keeps TINT.
+
+diff --git a/hw/timer/xilinx_timer.c b/hw/timer/xilinx_timer.c
+--- a/hw/timer/xilinx_timer.c
++++ b/hw/timer/xilinx_timer.c
+@@ -169,17 +169,26 @@
+     addr &= 3;
+     switch (addr) 
+     {
+-        case R_TCSR:
++        case R_TCSR: {
++            uint32_t old = xt->regs[R_TCSR];
++
++            /* TINT is write-1-to-clear; writing 0 leaves it set.  */
+             if (value & TCSR_TINT)
+                 value &= ~TCSR_TINT;
++            else
++                value |= old & TCSR_TINT;
+ 
+             xt->regs[addr] = value & 0x7ff;
+-            if (value & TCSR_ENT) {
+-                ptimer_transaction_begin(xt->ptimer);
++            /* Start on a 0->1 ENT edge; clearing ENT stops the counter.  */
++            ptimer_transaction_begin(xt->ptimer);
++            if ((value & TCSR_ENT) && !(old & TCSR_ENT)) {
+                 timer_enable(xt);
+-                ptimer_transaction_commit(xt->ptimer);
++            } else if (!(value & TCSR_ENT)) {
++                ptimer_stop(xt->ptimer);
+             }
++            ptimer_transaction_commit(xt->ptimer);
+             break;
++        }
+  
+         default:
+             if (addr < ARRAY_SIZE(xt->regs))
