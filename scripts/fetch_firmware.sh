@@ -30,9 +30,11 @@ sha_ok() { echo "$VEXOS_SHA256  $1" | sha256sum -c --status - 2>/dev/null; }
 
 # The VEXcode extension's cached copy, if Windows interop is available.
 vexcode_cache() {
-  local appdata
-  command -v cmd.exe >/dev/null 2>&1 || return 0
-  appdata=$(cmd.exe /c 'echo %APPDATA%' 2>/dev/null | tr -d '\r') || return 0
+  local appdata cmd
+  # PATH above leaves out the Windows folders, so look where cmd.exe lives
+  cmd=$(command -v cmd.exe || echo /mnt/c/Windows/System32/cmd.exe)
+  [ -x "$cmd" ] || return 0
+  appdata=$(cd / && "$cmd" /c 'echo %APPDATA%' 2>/dev/null | tr -d '\r') || return 0
   [ -n "$appdata" ] || return 0
   echo "$(wslpath -u "$appdata")/Code/User/globalStorage/vexrobotics.vexcode/vexos/V5/$VEXOS_NAME.vexos"
 }

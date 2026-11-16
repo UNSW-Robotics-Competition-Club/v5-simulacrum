@@ -1,6 +1,6 @@
 #!/bin/bash
-# End to end: VEXcode's own uploader (vexcom, the Linux x64 build shipped in
-# the VEXcode VS Code extension) over --usb:
+# End to end: VEXcode's own uploader (vexcom, the Linux x64 build the
+# VEXcode VS Code extension downloads with its tools) over --usb:
 #   1. vexcom --json                    brain info
 #   2. vexcom --python                  install VEX's MicroPython VM (once)
 #   3. vexcom --write main.py --run     a VEXcode Python program drives the
@@ -9,10 +9,24 @@
 V5SIM_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); export V5SIM_ROOT
 R=~/re/qemu-runs; REPO=$V5SIM_ROOT
 . "$REPO/scripts/e2e_env.sh"
-EXT=$(wslpath "$(cmd.exe /c "echo %USERPROFILE%" 2>/dev/null | tr -d '\r')")/.vscode/extensions
+# A Windows folder (%NAME%) as a WSL path. e2e_all.sh's PATH has no cmd.exe.
+win_dir() {
+  local cmd; cmd=$(command -v cmd.exe || echo /mnt/c/Windows/System32/cmd.exe)
+  [ -x "$cmd" ] && wslpath -u "$(cd / && "$cmd" /c "echo %$1%" 2>/dev/null | tr -d '\r')"
+}
 V=~/re/tools/vexcom
 if [ ! -x "$V" ]; then
-  src=$(ls -d $EXT/vexrobotics.vexcode-*/resources/tools/vexcom/linux-x64/vexcom | sort | tail -1)
+  # VEXcode 0.8+ keeps its tools in globalStorage, older versions in the extension
+  src=""
+  for g in "$(win_dir APPDATA)/Code/User/globalStorage/vexrobotics.vexcode/tools/vexcom/*/linux-x64/vexcom" \
+           "$(win_dir USERPROFILE)/.vscode/extensions/vexrobotics.vexcode-*/resources/tools/vexcom/linux-x64/vexcom"; do
+    src=$(ls -d $g 2>/dev/null | sort -V | tail -1)
+    [ -n "$src" ] && break
+  done
+  if [ -z "$src" ]; then
+    echo "SKIP: no vexcom. Install the VEXcode VS Code extension and build a project once (it downloads vexcom)."
+    exit 0
+  fi
   mkdir -p ~/re/tools && cp "$src" "$V" && chmod +x "$V"
 fi
 bash "$REPO/scripts/v5brain.sh" --headless --usb \

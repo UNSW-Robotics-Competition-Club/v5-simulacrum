@@ -10,6 +10,11 @@ V5SIM_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); export V5SIM_ROOT
 R=~/re/qemu-runs; REPO=$V5SIM_ROOT
 . "$REPO/scripts/e2e_env.sh"
 PROS=${PROS:-$HOME/venvs/pros/bin/pros}
+if [ ! -x "$PROS" ]; then
+  echo "SKIP: no PROS CLI at $PROS. Install it (SIMULATOR.md):"
+  echo "  python3 -m venv ~/venvs/pros && ~/venvs/pros/bin/pip install pros-cli \"setuptools<70\""
+  exit 0
+fi
 bash "$REPO/scripts/v5brain.sh" --headless --usb \
   --robot "--drive 1,2,3:4,5,6:blue --status 1" > $R/v5brain.out 2>&1 < /dev/null &
 sleep ${1:-22}
