@@ -24,8 +24,10 @@ rem /tmp/ttyV5sys and /tmp/ttyV5user inside WSL (see SIMULATOR.md).
 rem If another simulator is already running, this one becomes instance N:
 rem field view on port 8765+N, USB ports in /tmp/v5simN/. The "[v5brain]
 rem instance" line it prints says where. Set V5SIM_ID=N to pick one.
-rem Set V5SIM_HEADLESS=1 to run without the window.
+rem Set V5SIM_HEADLESS=1 to run without the window. Set V5SIM_DISTRO to use a
+rem WSL distro other than Ubuntu-24.04.
 setlocal
+if not defined V5SIM_DISTRO set "V5SIM_DISTRO=Ubuntu-24.04"
 rem script dir, captured before any `shift` (shift also shifts %0, so %~dp0
 rem would be wrong later in :vstart).
 set "HERE=%~dp0"
@@ -58,8 +60,8 @@ goto :direct
 
 :vfleet
 rem delegate to the WSL-side manager, passing the verb and its arguments
-for /f "usebackq delims=" %%p in (`wsl -d Ubuntu-24.04 -- wslpath -a "%~dp0scripts\v5fleet.sh"`) do set "FLEET=%%p"
-wsl -d Ubuntu-24.04 -- bash "%FLEET%" %*
+for /f "usebackq delims=" %%p in (`wsl -d %V5SIM_DISTRO% -- wslpath -a "%~dp0scripts\v5fleet.sh"`) do set "FLEET=%%p"
+wsl -d %V5SIM_DISTRO% -- bash "%FLEET%" %*
 exit /b %ERRORLEVEL%
 
 :vstart
@@ -83,9 +85,9 @@ set "SPAWN=%TEMP%\v5sim_spawn_%RANDOM%.cmd"
 >> "%SPAWN%" echo @del "%%~f0"
 powershell -NoProfile -Command "Start-Process -WindowStyle Hidden -FilePath '%SPAWN%'"
 rem wait for the instance to announce its id, then tell the user how to see it
-for /f "usebackq delims=" %%p in (`wsl -d Ubuntu-24.04 -- wslpath -a "%HERE%scripts\v5fleet.sh"`) do set "FLEET=%%p"
+for /f "usebackq delims=" %%p in (`wsl -d %V5SIM_DISTRO% -- wslpath -a "%HERE%scripts\v5fleet.sh"`) do set "FLEET=%%p"
 set "NEWID="
-for /f "usebackq delims=" %%i in (`wsl -d Ubuntu-24.04 -- bash "%FLEET%" waitid %TOKEN%`) do set "NEWID=%%i"
+for /f "usebackq delims=" %%i in (`wsl -d %V5SIM_DISTRO% -- bash "%FLEET%" waitid %TOKEN%`) do set "NEWID=%%i"
 if not defined NEWID (
   echo Started the V5 sim, but could not read its instance id.  Try: v5sim list
   exit /b 0
@@ -103,7 +105,7 @@ if "%PRESET%"=="" set "PRESET=drivetrain"
 rem a path to an .args file (e.g. one kept in a program's folder) is used as-is
 if /i not "%PRESET:~-5%"==".args" goto :named
 if not exist "%~f1" goto :named
-for /f "usebackq delims=" %%p in (`wsl -d Ubuntu-24.04 -- wslpath -a "%~f1"`) do set "PFILE=%%p"
+for /f "usebackq delims=" %%p in (`wsl -d %V5SIM_DISTRO% -- wslpath -a "%~f1"`) do set "PFILE=%%p"
 goto :preset_ok
 :named
 if /i "%PRESET:~-5%"==".args" set "PRESET=%PRESET:~0,-5%"
@@ -115,7 +117,7 @@ if exist "%~dp0sim\robots\%PRESET%.args" goto :preset_ok
   exit /b 2
 )
 :preset_ok
-for /f "usebackq delims=" %%p in (`wsl -d Ubuntu-24.04 -- wslpath -a "%~dp0scripts\v5brain.sh"`) do set "BRAIN=%%p"
+for /f "usebackq delims=" %%p in (`wsl -d %V5SIM_DISTRO% -- wslpath -a "%~dp0scripts\v5brain.sh"`) do set "BRAIN=%%p"
 set "RUNP="
 set "ARG2=%~2"
 if "%ARG2%"=="" goto :optsdone
@@ -129,7 +131,7 @@ if not exist "%~f2" (
   echo No such program: "%~2"
   exit /b 2
 )
-for /f "usebackq delims=" %%p in (`wsl -d Ubuntu-24.04 -- wslpath -a "%~f2"`) do set "RUNP=%%p"
+for /f "usebackq delims=" %%p in (`wsl -d %V5SIM_DISTRO% -- wslpath -a "%~f2"`) do set "RUNP=%%p"
 shift
 :opts
 rem drop the preset; everything left is extra robot options
@@ -170,7 +172,7 @@ if defined V5SIM_WINDOW_TOKEN if defined WSLENV set "WSLENV=%WSLENV%:V5SIM_WINDO
 if defined V5SIM_WINDOW_TOKEN if not defined WSLENV set "WSLENV=V5SIM_WINDOW_TOKEN"
 echo Robot: %PRESET%%EXTRA%   (field view and USB ports: see the [v5brain] instance line)
 if defined RUNP (
-  wsl -d Ubuntu-24.04 -- bash "%BRAIN%" %MODE% --robot "@%PFILE%%EXTRA%" --run "%RUNP%"
+  wsl -d %V5SIM_DISTRO% -- bash "%BRAIN%" %MODE% --robot "@%PFILE%%EXTRA%" --run "%RUNP%"
 ) else (
-  wsl -d Ubuntu-24.04 -- bash "%BRAIN%" %MODE% --robot "@%PFILE%%EXTRA%"
+  wsl -d %V5SIM_DISTRO% -- bash "%BRAIN%" %MODE% --robot "@%PFILE%%EXTRA%"
 )

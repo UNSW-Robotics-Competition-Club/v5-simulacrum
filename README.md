@@ -22,7 +22,7 @@ What you get:
 
 ## Requirements
 
-- **Windows 10/11 with WSL 2 and Ubuntu 24.04.** Setup and the launchers only work there for now.
+- **Windows 10/11 with WSL 2 and Ubuntu 24.04** (`wsl --install -d Ubuntu-24.04`, then open it once to create your user). Setup and the launchers only work there for now. To use a distro with another name, set `V5SIM_DISTRO` for `V5Sim` and use that name in the `wsl -d` commands.
 - About 3 GB free in WSL for QEMU, the Arm toolchain and the MuJoCo venv.
 - Optional: the VEXcode VS Code extension (builds the VEXcode test programs), usbip-win2 (makes the sim show up as a USB brain on Windows).
 
@@ -34,7 +34,7 @@ cd v5-simulacrum
 wsl -d Ubuntu-24.04 -- bash scripts/setup.sh   # firmware, QEMU + VEX models, Arm toolchain, MuJoCo venv
 ```
 
-The repo doesn't include VEX's firmware. `setup.sh` runs `scripts/fetch_firmware.sh`, which downloads VEXos 1.1.5.0 and the AI Vision firmware from VEX's public download server (the same one the VEXcode extension uses), checks them against known SHA-256 hashes and unpacks them into `extracted/`.
+The repo doesn't include VEX's firmware. `setup.sh` runs `scripts/fetch_firmware.sh`, which downloads VEXos 1.1.5.0 from VEX's public download server (the same one the VEXcode extension uses), checks it against a known SHA-256 hash and unpacks it into `extracted/`.
 
 ```bat
 V5Sim                                       :: drivetrain robot, no program
