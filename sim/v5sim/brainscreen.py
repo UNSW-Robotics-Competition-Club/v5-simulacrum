@@ -221,7 +221,7 @@ PAGE = """<!doctype html>
 </style></head><body>
 <header id="menu" hidden>
   <h1>V5 Simulator</h1>
-  <nav><a href="./">Field</a><a href="dashboard">Devices</a>
+  <nav><a href="./">Field</a><a href="dashboard">Devices</a><a href="controller">Controller</a>
        <a href="field">Field control</a><a class="on" href="screen">Brain screen</a></nav>
 </header>
 <main>

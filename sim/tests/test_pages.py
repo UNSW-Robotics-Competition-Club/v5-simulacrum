@@ -4,10 +4,11 @@ import re
 
 import pytest
 
-from v5sim import brainscreen, dashboard, fieldcontrol, fieldview
+from v5sim import brainscreen, controllerpage, dashboard, fieldcontrol, fieldview
 
 PAGES = {"./": fieldview.PAGE, "dashboard": dashboard.PAGE,
-         "field": fieldcontrol.PAGE, "screen": brainscreen.PAGE}
+         "controller": controllerpage.PAGE, "field": fieldcontrol.PAGE,
+         "screen": brainscreen.PAGE}
 TOKENS = ("--bg:#111317", "--card:#1a1d23", "--card2:#22262d", "--line:#2f343d")
 
 
@@ -34,3 +35,11 @@ def test_brain_screen_menu_starts_hidden_and_toggles():
     btn = re.search(r'<button id="menubtn"[^>]*>', page)
     assert btn and 'aria-controls="menu"' in btn.group(0) and 'aria-expanded="false"' in btn.group(0)
     assert "menu.hidden = !menu.hidden" in page
+
+
+def test_controller_page_has_every_button_and_never_sends_competition():
+    from v5sim.smart_controller import BUTTONS
+    page = controllerpage.PAGE
+    assert set(re.findall(r'data-btn="(\w+)"', page)) == set(BUTTONS)
+    assert 'id="lcd"' in page and 'id="rumble"' in page
+    assert "competition" not in page.split("<script>", 1)[1].split("JSON.stringify", 1)[1].split(")", 1)[0]

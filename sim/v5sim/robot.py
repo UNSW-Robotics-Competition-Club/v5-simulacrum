@@ -314,9 +314,13 @@ def connect(path: str) -> socket.socket:
 
 
 def parse_controller_input(msg: dict, current: ControllerState) -> ControllerState:
-    """Validate a /input message (see fieldview.py) into controller state."""
+    """Validate a /input message (see fieldview.py) into controller state.
+    A part the message leaves out (axes, buttons, competition) is kept: the
+    Controller page sends buttons alone without centring the Field page's
+    sticks."""
     raw_axes = msg.get("axes") or {}
     raw_buttons = msg.get("buttons") or []
+    keep_axes, keep_buttons = "axes" not in msg, "buttons" not in msg
     if not isinstance(raw_axes, dict) or not isinstance(raw_buttons, list):
         raise ValueError("axes must be an object, buttons a list")
     try:
@@ -330,8 +334,8 @@ def parse_controller_input(msg: dict, current: ControllerState) -> ControllerSta
         raise ValueError("unknown axis or button")
     competition = (Competition[msg["competition"]] if "competition" in msg
                    else current.competition)
-    return current.with_input({k: round(v) for k, v in axes.items()},
-                              buttons, competition)
+    return current.with_input(None if keep_axes else {k: round(v) for k, v in axes.items()},
+                              None if keep_buttons else buttons, competition)
 
 
 class Robot:
@@ -579,6 +583,14 @@ class Robot:
     def controller_sample(self) -> ControllerState:
         with self._controller_lock:
             return self.controller
+
+    def controller_view(self, ctrl: SmartController | SmartRadio | None) -> dict:
+        """The controller for the Controller page (state.json "controller"):
+        whether one is connected, its rumble pattern and the live input."""
+        s = self.controller_sample()
+        return {"connected": ctrl is not None, "rumble": ctrl.rumble if ctrl else "",
+                "axes": dict(s.axes), "buttons": sorted(s.buttons),
+                "competition": s.competition.name}
 
     def set_input(self, msg: dict) -> None:
         """A /input message: controller sticks and buttons, plus
@@ -1102,6 +1114,7 @@ def run(robot: Robot, seconds: float | None, status_every: float,
                          blocks=[(b.x, b.y, b.color) for b in f.blocks] if f else (),
                          held=f.held if f else (),
                          screen=ctrl.screen_lines() if ctrl else (),
+                         controller=robot.controller_view(ctrl),
                          goals=[(g.name, g.rect) for g in robot.goals],
                          score={"red": points.red, "blue": points.blue} if points else None,
                          obstacles=[o.view() for o in robot.obstacles],

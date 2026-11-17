@@ -74,7 +74,7 @@ PAGE = """<!doctype html>
 </style></head><body>
 <header>
   <h1>V5 Simulator</h1>
-  <nav><a href="./">Field</a><a href="dashboard">Devices</a>
+  <nav><a href="./">Field</a><a href="dashboard">Devices</a><a href="controller">Controller</a>
        <a class="on" href="field">Field control</a><a href="screen">Brain screen</a></nav>
 </header>
 <main>

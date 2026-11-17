@@ -110,3 +110,22 @@ def test_field_control_page_and_state(view):
     ctype, body = get(base + "/field.json")
     assert ctype == "application/json"
     assert json.loads(body) == {"t": 2.0, "competition": "DISABLED", "match": None}
+
+
+def test_state_carries_the_controller(view):
+    v, base = view
+    v.publish(0.1, 0.0, 0.0, 0.0, 0.0, screen=["Auton: Left"],
+              controller={"connected": True, "rumble": "-.-", "axes": {"Axis3": 50},
+                          "buttons": ["A"], "competition": "NONE"})
+    state = json.loads(get(base + "/state.json")[1])
+    assert state["screen"] == ["Auton: Left"]
+    assert state["controller"] == {"connected": True, "rumble": "-.-", "axes": {"Axis3": 50},
+                                   "buttons": ["A"], "competition": "NONE"}
+    v.publish(0.2, 0.0, 0.0, 0.0, 0.0)
+    assert json.loads(get(base + "/state.json")[1])["controller"] is None
+
+
+def test_controller_page_is_served(view):
+    _, base = view
+    ctype, page = get(base + "/controller")
+    assert ctype == "text/html" and b'id="lcd"' in page

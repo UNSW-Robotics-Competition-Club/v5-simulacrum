@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import parse_qs, urlsplit
 
-from . import brainscreen, dashboard, fieldcontrol
+from . import brainscreen, controllerpage, dashboard, fieldcontrol
 
 OVERRIDE_FIELD_PNG = Path(__file__).parent / "assets" / "override-field.png"
 TRAIL_POINTS = 2000
@@ -111,7 +111,7 @@ PAGE = """<!doctype html>
 </style></head><body>
 <header>
   <h1>V5 Simulator</h1>
-  <nav><a class="on" href="./">Field</a><a href="dashboard">Devices</a>
+  <nav><a class="on" href="./">Field</a><a href="dashboard">Devices</a><a href="controller">Controller</a>
        <a href="field">Field control</a><a href="screen">Brain screen</a></nav>
   <span class="spacer"></span>
   <button id="tapbtn" title="Tap the brain's button: Back / Home">Brain button</button>
@@ -435,6 +435,8 @@ class FieldView:
                     body, ctype = PAGE.encode(), "text/html; charset=utf-8"
                 elif self.path in ("/dashboard", "/dashboard.html"):
                     body, ctype = dashboard.PAGE.encode(), "text/html; charset=utf-8"
+                elif self.path in ("/controller", "/controller.html"):
+                    body, ctype = controllerpage.PAGE.encode(), "text/html; charset=utf-8"
                 elif self.path == "/override-field.png":
                     body, ctype = OVERRIDE_FIELD_PNG.read_bytes(), "image/png"
                 elif view._screen and self.path in ("/screen", "/screen.html"):
@@ -535,7 +537,8 @@ class FieldView:
                 held: list[str] = (), screen: list[str] = (),
                 goals: list[tuple[str, tuple]] = (),
                 score: dict | None = None, obstacles: list[list] = (),
-                opponents: list[tuple[float, float, float]] = ()) -> None:
+                opponents: list[tuple[float, float, float]] = (),
+                controller: dict | None = None) -> None:
         last = self._trail[-1] if self._trail else None
         if last is None or (x - last[0]) ** 2 + (y - last[1]) ** 2 >= TRAIL_MIN_STEP_M ** 2:
             self._trail = (self._trail + [(round(x, 4), round(y, 4))])[-TRAIL_POINTS:]
@@ -547,7 +550,8 @@ class FieldView:
                            "held": list(held), "screen": list(screen),
                            "goals": [[n, list(r)] for n, r in goals],
                            "score": score, "obstacles": list(obstacles),
-                           "opponents": [[round(v, 4) for v in o] for o in opponents]}
+                           "opponents": [[round(v, 4) for v in o] for o in opponents],
+                           "controller": controller}
 
     def publish_devices(self, t: float, devices: list[dict]) -> None:
         """Every device's state for /devices.json (the dashboard)."""

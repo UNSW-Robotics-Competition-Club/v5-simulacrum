@@ -644,3 +644,15 @@ def test_open_in_browser_respects_no_browser(monkeypatch):
     robot_mod.open_in_browser("http://localhost:8765/field")
     opener = "open" if sys.platform == "darwin" else "explorer.exe"
     assert calls == [([opener, "http://localhost:8765/field"],)]
+
+
+def test_buttons_without_axes_keep_the_sticks():
+    # the Controller page sends only buttons; a stick held on the Field page
+    # must not drop back to centre when a button is clicked there
+    robot = Robot([], None)
+    robot.set_input({"axes": {"Axis3": 90}, "buttons": []})
+    robot.set_input({"buttons": ["A"]})
+    s = robot.controller_sample()
+    assert s.axes == {"Axis3": 90} and s.buttons == frozenset({"A"})
+    robot.set_input({"axes": {}, "buttons": []})          # an explicit centre still centres
+    assert robot.controller_sample().axes == {}
