@@ -161,9 +161,11 @@ PAGE = r"""<!doctype html>
 
       <!-- power button (not an input the program sees) -->
       <rect x="258" y="196" width="44" height="44" rx="8" fill="#55585c" stroke="#45484c" stroke-width="1.5"/>
-      <path d="M287 209 A10 10 0 1 1 273 209" fill="none" stroke="var(--glyph)" stroke-width="3" stroke-linecap="round"/>
-      <path d="M268 218 L280 218 M274 212 L268 218 L274 224" fill="none" stroke="var(--glyph)" stroke-width="3"
-            stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- power symbol: a circle open at the top (centre 280,220, r 10, gap 35 degrees
+           each side of vertical) and a line down through the gap -->
+      <path d="M285.74 211.81 A10 10 0 1 1 274.26 211.81" fill="none" stroke="var(--glyph)"
+            stroke-width="3" stroke-linecap="round"/>
+      <path d="M280 206 L280 219" fill="none" stroke="var(--glyph)" stroke-width="3" stroke-linecap="round"/>
     </svg>
     <div id="bigscreen" aria-hidden="true"></div>
     <div id="rumble">no rumble</div>
