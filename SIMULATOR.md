@@ -452,7 +452,7 @@ A controller alone, with no robot behind it (it reports a robot linked and runni
   - Goals are floor zones, not obstacles.
   - The GPS heading convention is a best guess (0 = facing +y).
 - **Debugging:** v5gdb works with software breakpoints and single-step. GDB hardware breakpoints (`hbreak`) and watchpoints aren't verified. There is no JTAG.
-- **macOS:** no Windows-style USB (VEXcode's Download button), see section 5. **`--motor-fw` doesn't work properly on a Mac**: QEMU on macOS can only sleep in whole milliseconds, and the motor firmware's encoder edges come faster than that, so the firmware counts about half of them and drives its motor about twice as fast as commanded (the sim prints a warning). The default motor model (without `--motor-fw`) is unaffected.
+- **macOS:** on Intel Macs, MuJoCo may have no prebuilt build for the current Python; setup then skips it and `--physics mujoco` isn't available (the default physics is). No Windows-style USB (VEXcode's Download button), see section 5. **`--motor-fw` doesn't work properly on a Mac**: QEMU on macOS can only sleep in whole milliseconds, and the motor firmware's encoder edges come faster than that, so the firmware counts about half of them and drives its motor about twice as fast as commanded (the sim prints a warning). The default motor model (without `--motor-fw`) is unaffected.
 - **Speed:** the simulator runs close to real time. A busy PC can slow it slightly. While v5gdb single-steps, the program runs one instruction per step and so runs much slower.
 
 ---

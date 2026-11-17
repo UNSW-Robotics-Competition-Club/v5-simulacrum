@@ -115,9 +115,14 @@ if [ "$V5SIM_OS" = macos ] || [ "${SKIP_MUJOCO:-0}" != 1 ]; then
   fi
   pkgs="pytest"
   [ "$V5SIM_OS" = macos ] && pkgs="$pkgs pyserial"
-  [ "${SKIP_MUJOCO:-0}" != 1 ] && pkgs="$pkgs mujoco"
   # pytest runs the unit tests (cd sim && ~/venvs/sim/bin/python -m pytest tests)
   ~/venvs/sim/bin/pip install -q $pkgs
+  # MuJoCo is optional (--physics mujoco). Only a prebuilt wheel: where there
+  # is none (recent MuJoCo on Intel Macs) its source build fails anyway.
+  if [ "${SKIP_MUJOCO:-0}" != 1 ] && ! ~/venvs/sim/bin/python -c "import mujoco" 2>/dev/null; then
+    ~/venvs/sim/bin/pip install -q --only-binary=:all: mujoco ||
+      echo "note: no MuJoCo build for this machine; --physics mujoco won't be available (the default physics is)"
+  fi
 fi
 
 mkdir -p ~/re/qemu-runs
