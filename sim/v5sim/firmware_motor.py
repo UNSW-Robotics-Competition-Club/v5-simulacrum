@@ -23,6 +23,7 @@ firmware boots and announces itself afresh.
 """
 from __future__ import annotations
 
+import atexit
 import ctypes
 import math
 import os
@@ -220,8 +221,8 @@ def adc_samples(board: Board, state: MotorState, battery_v: float,
 
 
 def _child_setup() -> None:
-    """Child side of Popen: get SIGTERM when the robot sim exits, and fire
-    timers on time. The encoder edges are QEMU timers and the firmware
+    """Child side of Popen (Linux): get SIGTERM when the robot sim exits, and
+    fire timers on time. The encoder edges are QEMU timers and the firmware
     times them; Linux's default 50 us timer slack on QEMU's poll made its
     velocity readings jump by several percent. Both settings survive exec."""
     try:
@@ -230,6 +231,18 @@ def _child_setup() -> None:
         libc.prctl(29, 1)                   # PR_SET_TIMERSLACK, 1 ns
     except OSError:
         pass
+
+
+# Without Linux's parent-death signal (macOS), the motor QEMUs are stopped
+# when the robot sim exits: robot.main turns SIGTERM/SIGHUP into SystemExit,
+# so its own cleanup and this atexit hook run.
+_LIVE: set["FirmwareMotor"] = set()
+
+
+@atexit.register
+def _close_all() -> None:
+    for m in list(_LIVE):
+        m.close()
 
 
 def _connect(path: Path, deadline: float, proc: subprocess.Popen) -> socket.socket:
@@ -333,7 +346,8 @@ class FirmwareMotor:
                  "-global", f"lpc82x-periph.idle-pin={self.board.pin_idle_poll}",
                  *os.environ.get("V5SIM_MOTOR_QEMU_ARGS", "").split()],
                 stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-                preexec_fn=_child_setup)
+                preexec_fn=_child_setup if sys.platform.startswith("linux") else None)
+        _LIVE.add(self)
         try:
             deadline = time.monotonic() + CONNECT_TIMEOUT_S
             self._port = _Channel(_connect(port_sock, deadline, self._proc), "port", 4096)
@@ -395,6 +409,7 @@ class FirmwareMotor:
         re-announces on its own after its link watchdog."""
 
     def close(self, keep_log: bool = False) -> None:
+        _LIVE.discard(self)
         for ch in (self._port, self._plant):
             if ch is not None:
                 ch.close()

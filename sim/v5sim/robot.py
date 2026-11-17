@@ -147,6 +147,7 @@ import random
 import os
 import select
 import shutil
+import signal
 import subprocess
 import socket
 import sys
@@ -1112,11 +1113,12 @@ def run(robot: Robot, seconds: float | None, status_every: float,
 
 
 def open_in_browser(url: str) -> None:
-    """Open url in the Windows browser (WSL) or the desktop's; quietly
+    """Open url in the Windows browser (WSL), macOS's or the desktop's; quietly
     skipped where neither exists or V5SIM_NO_BROWSER=1 (scripted runs)."""
     if os.environ.get("V5SIM_NO_BROWSER") == "1":
         return
-    for opener in ("explorer.exe", "xdg-open"):
+    openers = ("open",) if sys.platform == "darwin" else ("explorer.exe", "xdg-open")
+    for opener in openers:
         if shutil.which(opener):
             try:
                 subprocess.Popen([opener, url], stdin=subprocess.DEVNULL,
@@ -1497,7 +1499,15 @@ def parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _exit_on_signal(signum: int, _frame: object) -> None:
+    raise SystemExit(128 + signum)
+
+
 def main(argv: list[str] | None = None) -> None:
+    # v5brain.sh stops the sim with SIGTERM (or the terminal closes: SIGHUP).
+    # As SystemExit, the cleanup below runs: motor QEMUs, the field view.
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, _exit_on_signal)
     ap = parser()
     args = ap.parse_args(argv)
     if not any((args.motor, args.drive, args.imu, args.rotation, args.distance,

@@ -5,12 +5,13 @@
 # touched; a check that isn't instance-aware yet only runs on instance 0
 # (V5SIM_ID=0).
 #   wsl -d Ubuntu-24.04 -- bash <repo>/scripts/e2e_all.sh [names...]
-export PATH=/usr/local/bin:/usr/bin:/bin
 V5SIM_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); export V5SIM_ROOT
+. "$V5SIM_ROOT/scripts/platform.sh"
+PATH=$(v5_path); export PATH
 REPO=$V5SIM_ROOT
 if [ -z "${V5SIM_ID:-}" ]; then
   for n in $(seq 1 9) 0; do       # instance 0 is the one people open
-    if ( flock -n 9 ) 9>"/tmp/v5sim$n.lock"; then export V5SIM_ID=$n; break; fi
+    if ( lock_fd 9 ) 9>"/tmp/v5sim$n.lock"; then export V5SIM_ID=$n; break; fi
   done
 fi
 [ -n "${V5SIM_ID:-}" ] || { echo "no free simulator instance" >&2; exit 1; }

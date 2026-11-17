@@ -13,15 +13,17 @@
 # 8765 + id. This script is normally reached through `v5sim <verb>` on Windows.
 set -uo pipefail
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+. "$REPO/scripts/platform.sh"
+[ "$V5SIM_OS" = macos ] && PATH="$(v5_path):$PATH" && export PATH
 MAX_ID=9
 BASE=${V5SIM_USBIP_BASE:-3300}
 RUNS=~/re/qemu-runs
 USBIP_EXE="/mnt/c/Program Files/USBip/usbip.exe"
 
 qmp_path() { [ "$1" = 0 ] && echo /tmp/v5qmp.sock || echo "/tmp/v5sim$1/v5qmp.sock"; }
-is_up() { ss -xl 2>/dev/null | grep -q " $(qmp_path "$1") "; }
+is_up() { unix_listening "$(qmp_path "$1")"; }
 # A USB/IP instance runs a TCP server on BASE+id; a pty instance does not.
-usbip_server_up() { ss -ltn 2>/dev/null | grep -q "127.0.0.1:$(( BASE + $1 )) "; }
+usbip_server_up() { tcp_listening "$(( BASE + $1 ))"; }
 valid_id() { case $1 in ''|*[!0-9]*) return 1;; esac; [ "$1" -ge 0 ] && [ "$1" -le "$MAX_ID" ]; }
 
 # "<id> <vport>" for each attached instance, from one `usbip.exe port` run.

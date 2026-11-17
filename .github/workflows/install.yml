@@ -1,0 +1,90 @@
+# Installs the simulator from scratch the way a user does (scripts/setup.sh)
+# on macOS (Apple Silicon and Intel) and Linux, then boots VEXos headless
+# with a robot and checks the brain screen, a program run and a clean stop.
+name: install
+
+on:
+  push:
+    branches: [macos]
+  workflow_dispatch:
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      V5SIM_NO_BROWSER: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Platform helpers
+        run: bash scripts/platform_test.sh
+
+      - name: Arm toolchain checksum (to pin in setup.sh)
+        if: runner.os == 'macOS'
+        run: |
+          arch=$(uname -m); [ "$arch" = arm64 ] || arch=x86_64
+          f=arm-gnu-toolchain-14.2.rel1-darwin-$arch-arm-none-eabi.tar.xz
+          mkdir -p ~/re/dl
+          curl -fsSL --retry 3 -o ~/re/dl/$f "https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/$f"
+          curl -fsSL --retry 3 "https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/$f.sha256asc" || true
+          shasum -a 256 ~/re/dl/$f
+          # until setup.sh pins it: use what was downloaded
+          grep -q "@ARM_SHA_" scripts/setup.sh && \
+            echo "V5SIM_ARM_SHA256=$(shasum -a 256 ~/re/dl/$f | cut -d' ' -f1)" >> "$GITHUB_ENV" || true
+
+      - name: Setup (scripts/setup.sh)
+        run: bash scripts/setup.sh
+
+      - name: Unit tests
+        run: cd sim && ~/venvs/sim/bin/python -m pytest -q tests
+
+      - name: Build a test program
+        run: bash programs/test-programs/build.sh hello
+
+      - name: Smoke run (scripts/smoke_run.sh)
+        run: bash scripts/smoke_run.sh && test -s ~/re/qemu-runs/smoke.ppm
+
+      - name: Launcher, brain screen, graceful stop
+        run: |
+          out=$(./v5sim start competition programs/test-programs/hello/hello.bin --motor-fw 7)
+          echo "$out"
+          id=$(echo "$out" | sed -n 's/^Started V5 sim instance \([0-9]*\)\..*/\1/p')
+          test -n "$id"
+          port=$((8765 + id))
+          for i in $(seq 120); do
+            curl -fs -o screen.png "http://localhost:$port/screen.png" && break; sleep 1
+          done
+          sleep 8                       # VEXos up, the program started
+          curl -fsS -o screen.png "http://localhost:$port/screen.png"
+          python3 -c 'import struct, sys
+          d = open("screen.png", "rb").read()
+          assert d[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
+          w, h = struct.unpack(">II", d[16:24])
+          assert (w, h) == (480, 272), (w, h)
+          print("screen.png", w, "x", h)'
+          curl -fsS -H 'Content-Type: application/json' -d '{"x": 240, "y": 136, "down": true}' "http://localhost:$port/touch"
+          curl -fsS -H 'Content-Type: application/json' -d '{"x": 240, "y": 136, "down": false}' "http://localhost:$port/touch"
+          ./v5sim list
+          ./v5sim status "$id"
+          ./v5sim stop "$id"
+          sleep 3
+          ./v5sim list
+          if pgrep -fl qemu-system-arm; then echo "QEMU left running after stop"; exit 1; fi
+
+      - name: Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.os }}
+          path: |
+            screen.png
+            ~/re/qemu-runs/*.txt
+            ~/re/qemu-runs/*.out
+            ~/re/qemu-runs/*.log
+            ~/re/qemu-runs/smoke.ppm
+          if-no-files-found: ignore

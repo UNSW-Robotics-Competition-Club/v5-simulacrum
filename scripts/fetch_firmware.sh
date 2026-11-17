@@ -6,13 +6,15 @@
 #
 # Source: the URL the VEXcode VS Code extension downloads VEXos from. If the
 # download fails, it falls back to the copy the extension keeps in
-# %APPDATA%\Code\User\globalStorage\vexrobotics.vexcode\vexos\V5\, or to a
+# %APPDATA%\Code\User\globalStorage\vexrobotics.vexcode\vexos\V5\ (on macOS
+# ~/Library/Application Support/Code/User/globalStorage/...), or to a
 # file you name with V5SIM_VEXOS_FILE=/path/to/VEXOS_V5_1_1_5_0.vexos.
 # Whatever the source, the file must match the pinned SHA-256.
 # Idempotent: does nothing when extracted/ is already complete.
 set -euo pipefail
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin   # see qemu_build.sh
 V5SIM_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+. "$V5SIM_ROOT/scripts/platform.sh"
+PATH=$(v5_path); export PATH      # platform.sh: no slow Windows PATH; Homebrew on macOS
 OUT=$V5SIM_ROOT/extracted
 
 VEXOS_NAME=VEXOS_V5_1_1_5_0
@@ -26,11 +28,15 @@ if [ -f "$DONE" ] && [ -f "$OUT/boot/p2_MainLoop_ps_01000000.bin" ] \
   exit 0
 fi
 
-sha_ok() { echo "$VEXOS_SHA256  $1" | sha256sum -c --status - 2>/dev/null; }
+sha_ok() { sha256_ok "$1" "$VEXOS_SHA256"; }
 
 # The VEXcode extension's cached copy, if Windows interop is available.
 vexcode_cache() {
   local appdata cmd
+  if [ "$V5SIM_OS" = macos ]; then
+    echo "$HOME/Library/Application Support/Code/User/globalStorage/vexrobotics.vexcode/vexos/V5/$VEXOS_NAME.vexos"
+    return 0
+  fi
   # PATH above leaves out the Windows folders, so look where cmd.exe lives
   cmd=$(command -v cmd.exe || echo /mnt/c/Windows/System32/cmd.exe)
   [ -x "$cmd" ] || return 0

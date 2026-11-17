@@ -1,29 +1,56 @@
 #!/bin/bash
-# One-time setup of the simulator in WSL (Ubuntu-24.04): build tools, VEXos
+# One-time setup of the simulator in WSL (Ubuntu-24.04) or on macOS
+# (Homebrew; Apple Silicon or Intel): build tools, VEXos
 # (downloaded from VEX by fetch_firmware.sh), QEMU
 # v11.1.2 with the VEX device models under ~/re/qemu, the Arm GNU
 # arm-none-eabi toolchain under ~/re/arm-gnu (builds the test programs), and
 # the Python venv for MuJoCo physics. Idempotent: rerun it after pulling qemu-vex/ changes.
 # Run from Windows:  wsl -d Ubuntu-24.04 -- bash <repo>/scripts/setup.sh
-# Env: SKIP_APT=1 skips the apt step (no sudo), SKIP_MUJOCO=1 the venv.
+# On macOS:          bash scripts/setup.sh
+# Env: SKIP_APT=1 skips the apt / brew step (no sudo), SKIP_MUJOCO=1 MuJoCo.
 set -euo pipefail
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin   # see qemu_build.sh
 V5SIM_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+. "$V5SIM_ROOT/scripts/platform.sh"
+PATH=$(v5_path); export PATH      # platform.sh: no slow Windows PATH; Homebrew on macOS
 QEMU_TAG=v11.1.2
 ARM_VER=14.2.rel1
-ARM_SHA256=62a63b981fe391a9cbad7ef51b17e49aeaa3e7b0d029b36ca1e9c3b2a9b78823
+# The Arm GNU toolchain build for this machine, and its SHA-256 (Arm's .sha256asc)
+case $V5SIM_OS-$(uname -m) in
+  macos-arm64)  ARM_HOST=darwin-arm64
+                ARM_SHA256=@ARM_SHA_DARWIN_ARM64@ ;;
+  macos-x86_64) ARM_HOST=darwin-x86_64
+                ARM_SHA256=@ARM_SHA_DARWIN_X86_64@ ;;
+  *-x86_64)     ARM_HOST=x86_64
+                ARM_SHA256=62a63b981fe391a9cbad7ef51b17e49aeaa3e7b0d029b36ca1e9c3b2a9b78823 ;;
+  *) echo "no Arm GNU toolchain build for $(uname -sm) here" >&2; exit 1 ;;
+esac
+ARM_SHA256=${V5SIM_ARM_SHA256:-$ARM_SHA256}   # another build: its SHA-256
 
 case $V5SIM_ROOT in *[[:space:]]*)
   echo "the repo path has a space in it ($V5SIM_ROOT); the scripts need a path without spaces" >&2
   exit 1 ;;
 esac
 
-if [ "${SKIP_APT:-0}" != 1 ]; then
+if [ "$V5SIM_OS" = macos ]; then
+  xcode-select -p >/dev/null 2>&1 || {
+    echo "needs Apple's Command Line Tools: run  xcode-select --install  then rerun this" >&2; exit 1; }
+  command -v brew >/dev/null || {
+    echo "needs Homebrew (https://brew.sh): install it, then rerun this" >&2; exit 1; }
+  if [ "${SKIP_APT:-0}" != 1 ]; then
+    echo "== build tools (Homebrew)"
+    brew install ninja meson pkg-config glib pixman sdl2 python@3.12 git
+  fi
+  # Homebrew's Python: macOS's own python3 is too old to rely on. v5_path
+  # puts it first for every script.
+  PATH=$(v5_path); export PATH
+  PY=$(brew --prefix python@3.12)/bin/python3.12
+elif [ "${SKIP_APT:-0}" != 1 ]; then
   echo "== build tools (sudo)"
   sudo apt-get update -q
   sudo apt-get install -y -q ninja-build meson pkg-config gcc libglib2.0-dev libpixman-1-dev \
     libsdl2-dev python3-venv python3-serial flex bison git curl
 fi
+PY=${PY:-python3}
 
 echo "== VEXos firmware -> extracted/"
 bash "$V5SIM_ROOT/scripts/fetch_firmware.sh"
@@ -39,23 +66,33 @@ bash "$V5SIM_ROOT/scripts/qemu_install_vex.sh"
 if [ ! -x ~/re/arm-gnu/bin/arm-none-eabi-gcc ]; then
   echo "== Arm GNU $ARM_VER arm-none-eabi -> ~/re/arm-gnu (programs/test-programs/build.sh, sdk_test.sh)"
   mkdir -p ~/re/dl
-  tarball=~/re/dl/arm-gnu-toolchain-$ARM_VER-x86_64-arm-none-eabi.tar.xz
+  tarball=~/re/dl/arm-gnu-toolchain-$ARM_VER-$ARM_HOST-arm-none-eabi.tar.xz
   [ -f "$tarball" ] || curl -fsSL -o "$tarball" \
     "https://developer.arm.com/-/media/Files/downloads/gnu/$ARM_VER/binrel/$(basename "$tarball")"
-  echo "$ARM_SHA256  $tarball" | sha256sum -c -
+  sha256_ok "$tarball" "$ARM_SHA256" || {
+    echo "$tarball doesn't match its SHA-256; delete it and rerun" >&2; exit 1; }
   rm -rf ~/re/arm-gnu && mkdir ~/re/arm-gnu
   tar -xJf "$tarball" -C ~/re/arm-gnu --strip-components=1
 fi
 ~/re/arm-gnu/bin/arm-none-eabi-gcc --version | head -1
 
-if [ "${SKIP_MUJOCO:-0}" != 1 ]; then
+# The robot sim's Python (v5brain.sh uses ~/venvs/sim when it's there): on
+# macOS always, for Homebrew's Python and pyserial; elsewhere for MuJoCo.
+if [ "$V5SIM_OS" = macos ] || [ "${SKIP_MUJOCO:-0}" != 1 ]; then
   if [ ! -x ~/venvs/sim/bin/python ]; then
-    echo "== MuJoCo venv -> ~/venvs/sim"
-    python3 -m venv --system-site-packages ~/venvs/sim
+    echo "== Python venv -> ~/venvs/sim"
+    "$PY" -m venv --system-site-packages ~/venvs/sim
   fi
+  pkgs="pytest"
+  [ "$V5SIM_OS" = macos ] && pkgs="$pkgs pyserial"
+  [ "${SKIP_MUJOCO:-0}" != 1 ] && pkgs="$pkgs mujoco"
   # pytest runs the unit tests (cd sim && ~/venvs/sim/bin/python -m pytest tests)
-  ~/venvs/sim/bin/python -c "import mujoco, pytest" 2>/dev/null     || ~/venvs/sim/bin/pip install -q mujoco pytest
+  ~/venvs/sim/bin/pip install -q $pkgs
 fi
 
 mkdir -p ~/re/qemu-runs
-echo "SETUP_DONE: run V5Sim.cmd from Windows, or scripts/v5brain.sh in WSL"
+if [ "$V5SIM_OS" = macos ]; then
+  echo "SETUP_DONE: run ./v5sim from the repo (e.g. ./v5sim competition)"
+else
+  echo "SETUP_DONE: run V5Sim.cmd from Windows, or scripts/v5brain.sh in WSL"
+fi

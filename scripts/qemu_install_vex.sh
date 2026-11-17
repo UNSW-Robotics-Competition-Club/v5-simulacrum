@@ -3,6 +3,7 @@
 # then rebuild. Run: wsl -d Ubuntu-24.04 -- bash /mnt/c/.../scripts/qemu_install_vex.sh
 set -euo pipefail
 V5SIM_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); export V5SIM_ROOT
+. "$V5SIM_ROOT/scripts/platform.sh"
 REPO=$V5SIM_ROOT
 Q=~/re/qemu
 cd "$Q"
@@ -29,7 +30,7 @@ for f in "${SRCS[@]}"; do files+="'../${f#hw/}', "; done
 # meson configure (minutes on a cold WSL).
 line="arm_common_ss.add(when: 'CONFIG_VEX_V5', if_true: files(${files%, }))"
 if ! grep -qxF "$line" hw/arm/meson.build; then
-  sed -i '/CONFIG_VEX_V5/d' hw/arm/meson.build
+  sed_i '/CONFIG_VEX_V5/d' hw/arm/meson.build
   echo "$line" >> hw/arm/meson.build
 fi
 

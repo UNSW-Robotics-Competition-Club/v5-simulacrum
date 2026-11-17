@@ -42,6 +42,10 @@
 #   wsl -d Ubuntu-24.04 -- bash <repo>/scripts/v5brain.sh --run /mnt/c/.../prog.bin
 set -euo pipefail
 V5SIM_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); export V5SIM_ROOT
+. "$V5SIM_ROOT/scripts/platform.sh"
+# macOS: Homebrew's python3 (the helpers) even when started from an app
+# with a minimal PATH (VS Code from the Dock)
+[ "$V5SIM_OS" = macos ] && PATH="$(v5_path):$PATH" && export PATH
 REPO=$V5SIM_ROOT
 B=$REPO/extracted/boot
 QEMU=~/re/qemu/build/qemu-system-arm
@@ -81,11 +85,11 @@ claim() {
   local dir=/tmp
   [ "$1" = 0 ] || dir=/tmp/v5sim$1
   exec 9>"/tmp/v5sim$1.lock"
-  flock -n 9 || return 1
+  lock_fd 9 || return 1
   # a brain started without the lock (an older copy of this script) still
   # listens on its sockets. (Not a connect test: QMP takes one client at
   # a time, so a busy brain doesn't answer.)
-  if ss -xl | grep -qE " ($dir/v5qmp\.sock|$dir/v5port1\.sock) "; then
+  if unix_listening "$dir/v5qmp.sock" || unix_listening "$dir/v5port1.sock"; then
     exec 9>&-
     return 1
   fi
@@ -186,7 +190,7 @@ if [ -n "$robot_args" ]; then
    # its warnings and errors (bad options, two devices on a port) also
    # show on this console, not only in the log
    cd "$REPO/sim" && exec env PATH=/usr/bin:/bin "$sim_python" -m v5sim.robot $robot_args \
-     > "$ROBOT_LOG" 2> >(tee -a "$ROBOT_LOG" | sed -u 's/^/[robot] /' >&2)) &
+     > "$ROBOT_LOG" 2> >(tee -a "$ROBOT_LOG" | while IFS= read -r l; do printf '[robot] %s\n' "$l"; done >&2)) &
   helpers+=($!)
 fi
 # usbipd-win, if installed, owns the standard USB/IP port 3240 on Windows, so
@@ -204,7 +208,7 @@ if [ "$usb" = ip ]; then
   if [ -x "$USBIP_EXE" ]; then
     rm -f "$T/usbip-vport"
     (for _ in $(seq 100); do
-       ss -ltn | grep -q "127.0.0.1:$USBIP_PORT " && break; sleep 0.1
+       tcp_listening "$USBIP_PORT" && break; sleep 0.1
      done
      # --once: attach a single time. Without it usbip-win2 keeps retrying and
      # stacks a fresh COM-port pair on every reconnect, so stale dead brains

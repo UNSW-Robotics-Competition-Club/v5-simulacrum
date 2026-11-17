@@ -1,0 +1,101 @@
+#!/bin/bash
+# V5 brain simulator on macOS or Linux: VEXos in QEMU plus a simulated robot.
+# The same as V5Sim.cmd on Windows.
+#
+#   ./v5sim [preset] [program.bin] [robot options...]
+#
+#   preset       a robot from sim/robots/*.args: drivetrain (default),
+#                competition, pushback-practice, ui-test (on a field
+#                controller, disabled: for testing UI); or a path to any .args
+#                file (e.g. programs/my-bot/robot.args)
+#   program.bin  optional: installed in slot 1 and started once VEXos is up
+#                (write - to give robot options without a program)
+#   robot options  added to the preset, e.g. --match 30, --radio 11:partner,
+#                --physics mujoco (SIMULATOR.md section 4 lists them)
+#
+#   e.g.  ./v5sim competition my_auton.bin --match 20
+#
+# The brain's screen opens in a window (click = touch); the field view is at
+# http://localhost:8765/ and the brain screen also at /screen. The brain's USB
+# ports are serial ports: /tmp/ttyV5sys (pros upload, vexcom) and
+# /tmp/ttyV5user (program output). If another simulator is already running,
+# this one becomes instance N: field view on port 8765+N, USB ports in
+# /tmp/v5simN/. The "[v5brain] instance" line says where. V5SIM_ID=N picks
+# one; V5SIM_HEADLESS=1 runs without the window.
+#
+# Management verbs:
+#   ./v5sim start [preset] [program.bin] [opts]   in the background (no window); prints its id
+#   ./v5sim log [id]             follow that instance's console live (Ctrl-C quits)
+#   ./v5sim list                 running instances and their ports
+#   ./v5sim status [id]          detail for one instance (default 0)
+#   ./v5sim clear [id]           empty all 8 program slots (keep settings)
+#   ./v5sim reset [id]           factory reset the brain (wipe its flash)
+#   ./v5sim stop <id|all>        graceful shutdown
+set -euo pipefail
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. "$HERE/scripts/platform.sh"
+[ "$V5SIM_OS" = macos ] && PATH="$(v5_path):$PATH" && export PATH
+
+case ${1:-} in
+  list|ls|status|info|log|logs|tail|clear|reset|stop|kill)
+    exec bash "$HERE/scripts/v5fleet.sh" "$@" ;;
+  attach|detach)
+    echo "attach/detach are for Windows USB (usbip-win2); here the brain's USB is /tmp/ttyV5sys" >&2
+    exit 2 ;;
+  -h|--help|help)
+    sed -n '2,34p' "$0"; exit 0 ;;
+  start)
+    shift
+    RUNS=~/re/qemu-runs; mkdir -p "$RUNS"
+    token=$$$RANDOM$RANDOM
+    log=$RUNS/start-$token.log
+    # its own session, no terminal: closing this shell leaves it running
+    # until `./v5sim stop <id>`
+    V5SIM_WINDOW_TOKEN=$token V5SIM_HEADLESS=${V5SIM_HEADLESS:-1} \
+      nohup "$0" "$@" < /dev/null > "$log" 2>&1 &
+    if ! id=$(bash "$HERE/scripts/v5fleet.sh" waitid "$token"); then
+      echo "Started the V5 sim, but could not read its instance id. Try: ./v5sim list (log: $log)"
+      exit 0
+    fi
+    echo "Started V5 sim instance $id."
+    echo "  field view   : http://localhost:$((8765 + id))/"
+    echo "  brain screen : http://localhost:$((8765 + id))/screen"
+    echo "  live log     : ./v5sim log $id"
+    echo "  stop         : ./v5sim stop $id"
+    exit 0 ;;
+esac
+
+preset=${1:-drivetrain}
+[ $# -gt 0 ] && shift
+if [ "${preset%.args}" != "$preset" ] && [ -f "$preset" ]; then
+  pfile=$(cd "$(dirname "$preset")" && pwd)/$(basename "$preset")
+else
+  preset=${preset%.args}
+  pfile=robots/$preset.args          # v5brain.sh runs the robot sim from sim/
+  if [ ! -f "$HERE/sim/$pfile" ]; then
+    echo "No robot preset \"$preset\". Choose one of:" >&2
+    (cd "$HERE/sim/robots" && ls -1 *.args) >&2
+    exit 2
+  fi
+fi
+case $pfile in *[[:space:]]*)
+  echo "the preset's path can't contain spaces: $pfile" >&2; exit 2 ;;
+esac
+
+run=()
+if [ $# -gt 0 ]; then
+  if [ "$1" = - ]; then
+    shift
+  elif [ "${1#-}" = "$1" ]; then         # not a robot option: a program
+    [ -f "$1" ] || { echo "No such program: \"$1\"" >&2; exit 2; }
+    run=(--run "$(cd "$(dirname "$1")" && pwd)/$(basename "$1")")
+    shift
+  fi
+fi
+extra=""
+for a in "$@"; do extra="$extra $a"; done
+
+mode=(--id "${V5SIM_ID:-auto}" --usb)
+[ "${V5SIM_HEADLESS:-0}" = 1 ] && mode+=(--headless)
+echo "Robot: $preset$extra   (field view and USB ports: see the [v5brain] instance line)"
+exec bash "$HERE/scripts/v5brain.sh" "${mode[@]}" --robot "@$pfile$extra" ${run[@]+"${run[@]}"}
