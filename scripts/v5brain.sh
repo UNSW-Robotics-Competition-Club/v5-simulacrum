@@ -10,6 +10,9 @@
 #   --slot N        program slot 1..8 for --run (default 1)
 #   --robot "ARGS"  also start the device/physics sim, e.g.
 #                   --robot "--drive 1,2,3:4,5,6:blue --motor 8:green"
+#                   ARGS is split like a shell command line (quotes, no
+#                   globbing), so a path with spaces can be quoted in it:
+#                   --robot "@'/mnt/c/Users/Me/OneDrive - School/bot.args'"
 #   --headless      no window; console on stdout, screenshots via QMP
 #   --run-after S   seconds to wait before starting the Run taps (env
 #                   V5SIM_RUN_AFTER, default 0.5). The taps wait for VEXos's
@@ -192,25 +195,34 @@ wait_for_sock() { for _ in $(seq 100); do [ -S "$1" ] && return 0; sleep 0.1; do
 # MuJoCo for --physics mujoco), else the system python3.
 sim_python=${V5SIM_PYTHON:-python3}
 [ -z "${V5SIM_PYTHON:-}" ] && [ -x ~/venvs/sim/bin/python ] && sim_python=~/venvs/sim/bin/python
-[ -n "$robot_args" ] && robot_args="$robot_args ${V5SIM_ROBOT_EXTRA:-}"
-# the robot sim's own QMP socket: the field view presses the brain's button
-# and the battery model reports to it, without waiting on a script's QMP
-ROBOT_QMP=$T/v5qmp-robot.sock
-[ -n "$robot_args" ] && robot_args="$robot_args --qmp $ROBOT_QMP"
-# and a third for the field view's /screen page (frames + touch), which holds
-# its connection open: the brain's screen in a browser or VS Code
-[ -n "$robot_args" ] && robot_args="$robot_args --screen-qmp $T/v5qmp-screen.sock"
-# the instance's field view (the last --view wins over a preset's); another
-# instance's robot also gets its own sockets
-[ -n "$robot_args" ] && robot_args="$robot_args --view $VIEW"
-if [ -n "$robot_args" ] && [ "$id" != 0 ]; then
-  robot_args="$robot_args --sock $T/v5port{port}.sock"
+# The robot sim's options as words: --robot and V5SIM_ROBOT_EXTRA are split
+# like a shell command line (shlex: quotes, no globbing), not on every space,
+# so a quoted path with spaces (OneDrive - School/...) stays one word. Not
+# eval: the options can come from an editor's settings.
+robot_argv=()
+if [ -n "$robot_args" ]; then
+  "$sim_python" -I -c 'import shlex, sys
+try:
+    words = shlex.split(" ".join(sys.argv[1:]))
+except ValueError as e:
+    sys.exit(f"--robot: {e}: {sys.argv[1]}")
+sys.stdout.write("".join(w + "\0" for w in words))' \
+    "$robot_args" "${V5SIM_ROBOT_EXTRA:-}" > "$T/robot-argv" || exit 2
+  while IFS= read -r -d '' w; do robot_argv+=("$w"); done < "$T/robot-argv"
+  # the robot sim's own QMP socket: the field view presses the brain's
+  # button and the battery model reports to it, without waiting on a
+  # script's QMP; a third for the field view's /screen page (frames +
+  # touch), which holds its connection open: the brain's screen in a
+  # browser or VS Code; the instance's field view (the last --view wins over
+  # a preset's); another instance's robot also gets its own sockets
+  robot_argv+=(--qmp "$T/v5qmp-robot.sock" --screen-qmp "$T/v5qmp-screen.sock" --view "$VIEW")
+  [ "$id" = 0 ] || robot_argv+=(--sock "$T/v5port{port}.sock")
 fi
 if [ -n "$robot_args" ]; then
   (wait_for_sock $T/v5port1.sock
    # its warnings and errors (bad options, two devices on a port) also
    # show on this console, not only in the log
-   cd "$REPO/sim" && exec env PATH=/usr/bin:/bin "$sim_python" -m v5sim.robot $robot_args \
+   cd "$REPO/sim" && exec env PATH=/usr/bin:/bin "$sim_python" -m v5sim.robot "${robot_argv[@]}" \
      > "$ROBOT_LOG" 2> >(tee -a "$ROBOT_LOG" | while IFS= read -r l; do printf '[robot] %s\n' "$l"; done >&2)) &
   helpers+=($!)
 fi
