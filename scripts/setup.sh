@@ -13,18 +13,24 @@ V5SIM_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 . "$V5SIM_ROOT/scripts/platform.sh"
 PATH=$(v5_path); export PATH      # platform.sh: no slow Windows PATH; Homebrew on macOS
 QEMU_TAG=v11.1.2
+# The arm-none-eabi toolchain for this machine: Arm's GNU toolchain build,
+# and xPack's build of the same GCC 14.2 (GitHub releases) where Arm has no
+# build here or its download server refuses (it answers 503 to some
+# networks). Both pinned by SHA-256.
 ARM_VER=14.2.rel1
-# The Arm GNU toolchain build for this machine, and its SHA-256 (Arm's .sha256asc)
+XPACK_VER=14.2.1-1.1
+ARM_HOST="" ARM_SHA256=""
 case $V5SIM_OS-$(uname -m) in
-  macos-arm64)  ARM_HOST=darwin-arm64
-                ARM_SHA256=@ARM_SHA_DARWIN_ARM64@ ;;
-  macos-x86_64) ARM_HOST=darwin-x86_64
-                ARM_SHA256=@ARM_SHA_DARWIN_X86_64@ ;;
+  macos-arm64)  XPACK_HOST=darwin-arm64
+                XPACK_SHA256=@XPACK_SHA_DARWIN_ARM64@ ;;
+  macos-x86_64) XPACK_HOST=darwin-x64
+                XPACK_SHA256=@XPACK_SHA_DARWIN_X64@ ;;
   *-x86_64)     ARM_HOST=x86_64
-                ARM_SHA256=62a63b981fe391a9cbad7ef51b17e49aeaa3e7b0d029b36ca1e9c3b2a9b78823 ;;
-  *) echo "no Arm GNU toolchain build for $(uname -sm) here" >&2; exit 1 ;;
+                ARM_SHA256=62a63b981fe391a9cbad7ef51b17e49aeaa3e7b0d029b36ca1e9c3b2a9b78823
+                XPACK_HOST=linux-x64
+                XPACK_SHA256=@XPACK_SHA_LINUX_X64@ ;;
+  *) echo "no arm-none-eabi toolchain build for $(uname -sm) here" >&2; exit 1 ;;
 esac
-ARM_SHA256=${V5SIM_ARM_SHA256:-$ARM_SHA256}   # another build: its SHA-256
 
 case $V5SIM_ROOT in *[[:space:]]*)
   echo "the repo path has a space in it ($V5SIM_ROOT); the scripts need a path without spaces" >&2
@@ -63,16 +69,32 @@ fi
 echo "== VEX device models + build (first build takes several minutes)"
 bash "$V5SIM_ROOT/scripts/qemu_install_vex.sh"
 
+# fetch URL FILE SHA256: download (unless there already) and check it
+fetch() {
+  [ -f "$2" ] && sha256_ok "$2" "$3" && return 0
+  rm -f "$2"
+  curl -fsSL --retry 3 -o "$2" "$1" && sha256_ok "$2" "$3" && return 0
+  echo "  couldn't get a matching $(basename "$2")" >&2
+  rm -f "$2"
+  return 1
+}
 if [ ! -x ~/re/arm-gnu/bin/arm-none-eabi-gcc ]; then
-  echo "== Arm GNU $ARM_VER arm-none-eabi -> ~/re/arm-gnu (programs/test-programs/build.sh, sdk_test.sh)"
+  echo "== arm-none-eabi GCC 14.2 -> ~/re/arm-gnu (programs/test-programs/build.sh, sdk_test.sh)"
   mkdir -p ~/re/dl
-  tarball=~/re/dl/arm-gnu-toolchain-$ARM_VER-$ARM_HOST-arm-none-eabi.tar.xz
-  [ -f "$tarball" ] || curl -fsSL -o "$tarball" \
-    "https://developer.arm.com/-/media/Files/downloads/gnu/$ARM_VER/binrel/$(basename "$tarball")"
-  sha256_ok "$tarball" "$ARM_SHA256" || {
-    echo "$tarball doesn't match its SHA-256; delete it and rerun" >&2; exit 1; }
+  tarball=""
+  if [ -n "$ARM_HOST" ]; then
+    f=~/re/dl/arm-gnu-toolchain-$ARM_VER-$ARM_HOST-arm-none-eabi.tar.xz
+    fetch "https://developer.arm.com/-/media/Files/downloads/gnu/$ARM_VER/binrel/$(basename "$f")" \
+      "$f" "$ARM_SHA256" && tarball=$f
+  fi
+  if [ -z "$tarball" ]; then
+    f=~/re/dl/xpack-arm-none-eabi-gcc-$XPACK_VER-$XPACK_HOST.tar.gz
+    fetch "https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v$XPACK_VER/$(basename "$f")" \
+      "$f" "${V5SIM_XPACK_SHA256:-$XPACK_SHA256}" && tarball=$f
+  fi
+  [ -n "$tarball" ] || { echo "no arm-none-eabi toolchain: check the network and rerun" >&2; exit 1; }
   rm -rf ~/re/arm-gnu && mkdir ~/re/arm-gnu
-  tar -xJf "$tarball" -C ~/re/arm-gnu --strip-components=1
+  tar -xf "$tarball" -C ~/re/arm-gnu --strip-components=1
 fi
 ~/re/arm-gnu/bin/arm-none-eabi-gcc --version | head -1
 
