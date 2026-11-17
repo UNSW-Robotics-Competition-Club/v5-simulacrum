@@ -36,6 +36,17 @@ cd v5-simulacrum
 wsl -d Ubuntu-24.04 -- bash scripts/setup.sh   # firmware, QEMU + VEX models, Arm toolchain, MuJoCo venv
 ```
 
+Cloning with SSH (`git@github.com:...`) and it fails with "Connection closed by ... port 22"? The network blocks SSH's port. Use the HTTPS URL above, or SSH over port 443: `git clone ssh://git@ssh.github.com:443/UNSW-Robotics-Competition-Club/v5-simulacrum.git`. To make every GitHub SSH clone use port 443, add to `~/.ssh/config`:
+
+```
+Host github.com
+  HostName ssh.github.com
+  Port 443
+  User git
+```
+
+On a Mac, until macOS support is merged into `main`, clone the `macos` branch: add `-b macos` to the clone command.
+
 The repo doesn't include VEX's firmware. `setup.sh` runs `scripts/fetch_firmware.sh`, which downloads VEXos 1.1.5.0 from VEX's public download server (the same one the VEXcode extension uses), checks it against a known SHA-256 hash and unpacks it into `extracted/`.
 
 ```bat
