@@ -15,7 +15,7 @@ set -euo pipefail
 V5SIM_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 . "$V5SIM_ROOT/scripts/platform.sh"
 PATH=$(v5_path); export PATH      # platform.sh: no slow Windows PATH; Homebrew on macOS
-OUT=$V5SIM_ROOT/extracted
+OUT=${V5SIM_FIRMWARE_DIR:-$V5SIM_ROOT/extracted}   # the extension keeps it elsewhere
 
 VEXOS_NAME=VEXOS_V5_1_1_5_0
 VEXOS_SHA256=56cbf3c3160dc571e5fb228e709357512671dfd2e3921b500e456dac94e054e3

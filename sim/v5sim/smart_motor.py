@@ -17,6 +17,7 @@ gains here are this model's own (the real firmware's scaling isn't decoded).
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass, replace
 from enum import IntEnum
 from pathlib import Path
@@ -37,7 +38,8 @@ FW_VERSION_5_5W = 0x05
 DEVICE_TYPE_MOTOR_5_5W = 0x05
 FLAG_5_5W = 0x80                 # status byte 12 bit 7 on the 5.5 W motor
 
-FIRMWARE_DIR = Path(__file__).resolve().parents[2] / "extracted" / "assets" / "files"
+FIRMWARE_DIR = Path(os.environ.get("V5SIM_FIRMWARE_DIR")
+                    or Path(__file__).resolve().parents[2] / "extracted") / "assets" / "files"
 
 
 CONFIG_ECHO = bytes([0x13, 0x10, 0x30, 0x28, 0x40, 0x20, 0x23, 0x00,

@@ -47,9 +47,15 @@ V5SIM_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd); export V5SIM_ROOT
 # with a minimal PATH (VS Code from the Dock)
 [ "$V5SIM_OS" = macos ] && PATH="$(v5_path):$PATH" && export PATH
 REPO=$V5SIM_ROOT
-B=$REPO/extracted/boot
-QEMU=~/re/qemu/build/qemu-system-arm
-RUNS=~/re/qemu-runs
+# Where things are; the VS Code extension's bundled simulator sets all three.
+# V5SIM_FIRMWARE_DIR: the unpacked VEXos (scripts/fetch_firmware.sh),
+# V5SIM_QEMU: qemu-system-arm with the VEX models, V5SIM_RUNS: logs and the
+# brain's flash images.
+export V5SIM_FIRMWARE_DIR=${V5SIM_FIRMWARE_DIR:-$REPO/extracted}
+B=$V5SIM_FIRMWARE_DIR/boot
+QEMU=${V5SIM_QEMU:-~/re/qemu/build/qemu-system-arm}
+export V5SIM_RUNS=${V5SIM_RUNS:-~/re/qemu-runs}
+RUNS=$V5SIM_RUNS
 MAX_ID=9
 
 run_file="" slot=1 robot_args="" headless=0 run_after=${V5SIM_RUN_AFTER:-0.5} usb=0 id=${V5SIM_ID:-0}

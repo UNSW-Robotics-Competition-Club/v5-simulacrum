@@ -13,9 +13,14 @@ if [ "$V5SIM_OS" = macos ]; then
   [ -x ~/re/qemu-py/bin/python3 ] || python3 -m venv ~/re/qemu-py
   pyopt=(--python="$HOME/re/qemu-py/bin/python3")
 fi
+# V5SIM_QEMU_CONFIGURE replaces the display options: the VS Code extension's
+# bundle builds a headless QEMU with as few libraries as possible.
+display_opts=${V5SIM_QEMU_CONFIGURE:---enable-sdl}
 if [ ! -f build/build.ninja ]; then
-  ./configure --target-list=arm-softmmu --enable-sdl --disable-werror \
-    --disable-docs --disable-tools --prefix="$HOME/re/qemu-install" ${pyopt[@]+"${pyopt[@]}"}
+  # shellcheck disable=SC2086
+  ./configure --target-list=arm-softmmu --disable-werror \
+    --disable-docs --disable-tools --prefix="$HOME/re/qemu-install" ${pyopt[@]+"${pyopt[@]}"} \
+    $display_opts
 fi
 ninja -C build -j"$(ncpu)" qemu-system-arm
 ls -l build/qemu-system-arm

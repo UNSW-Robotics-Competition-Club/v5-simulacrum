@@ -17,7 +17,7 @@ REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 [ "$V5SIM_OS" = macos ] && PATH="$(v5_path):$PATH" && export PATH
 MAX_ID=9
 BASE=${V5SIM_USBIP_BASE:-3300}
-RUNS=~/re/qemu-runs
+RUNS=${V5SIM_RUNS:-~/re/qemu-runs}
 USBIP_EXE="/mnt/c/Program Files/USBip/usbip.exe"
 
 qmp_path() { [ "$1" = 0 ] && echo /tmp/v5qmp.sock || echo "/tmp/v5sim$1/v5qmp.sock"; }
