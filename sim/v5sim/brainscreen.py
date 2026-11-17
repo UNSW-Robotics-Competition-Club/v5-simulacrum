@@ -198,6 +198,7 @@ PAGE = """<!doctype html>
            touch-action:none; cursor:pointer; }
   #msg { position:absolute; inset:0; display:flex; align-items:center;
          justify-content:center; color:var(--muted); pointer-events:none; }
+  #msg[hidden] { display:none; }   /* display:flex above would beat [hidden] */
   #bar { display:flex; gap:6px; align-items:center; flex-wrap:wrap;
          justify-content:center; }
   button { background:var(--tile); color:var(--fg); border:1px solid var(--line);

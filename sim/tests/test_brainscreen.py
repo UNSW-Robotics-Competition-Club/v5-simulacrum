@@ -208,3 +208,9 @@ def test_no_screen_routes_without_a_screen():
             assert e.value.code == 404
     finally:
         view.close()
+
+
+def test_page_hides_the_waiting_message():
+    # #msg's display:flex would otherwise beat the hidden attribute
+    from v5sim.brainscreen import PAGE
+    assert "#msg[hidden] { display:none; }" in PAGE
