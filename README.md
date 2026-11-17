@@ -14,6 +14,7 @@ What you get:
 - the brain's screen in a window, with touch and the front button;
 - a simulated robot: motors, drivetrains (tank, X-drive, mecanum), IMU, distance, optical, GPS, AI Vision, legacy Vision, rotation, 3-wire devices, radio and controllers;
 - a field view and device dashboard in the browser (http://localhost:8765/), driven from the keyboard or a gamepad;
+- the brain screen, field view and dashboard inside VS Code, with a port map editor for the robot ([v5-simulacrum-vscode](https://github.com/UNSW-Robotics-Competition-Club/v5-simulacrum-vscode));
 - a field-control page that runs timed matches and skills runs, for testing competition code and UI (`V5Sim ui-test program.bin`);
 - timed matches through field control, game blocks and goals, and optional MuJoCo physics;
 - USB upload and terminal: VEXcode and PROS see it as a plugged-in brain (via usbip-win2), or use WSL serial ports;

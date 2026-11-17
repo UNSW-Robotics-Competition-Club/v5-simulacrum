@@ -15,6 +15,11 @@ Scripts can post the same JSON with Content-Type: application/json
 other types get 415. {"gesture": "up|down|left|right"} swipes in front of
 the optical sensors (keys 1-4) and {"tower": true|false} holds the Light
 Tower button (key T).
+
+With a BrainScreen (robot.py --screen-qmp), /screen shows the brain's screen:
+/screen.png?since=N is its latest frame (304 while it is still frame N) and
+POST /touch {"x": 0..479, "y": 0..271, "down": true|false} presses it (no
+"down": a move while pressed).
 """
 from __future__ import annotations
 
@@ -23,8 +28,9 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
+from urllib.parse import parse_qs, urlsplit
 
-from . import dashboard, fieldcontrol
+from . import brainscreen, dashboard, fieldcontrol
 
 OVERRIDE_FIELD_PNG = Path(__file__).parent / "assets" / "override-field.png"
 TRAIL_POINTS = 2000
@@ -58,6 +64,7 @@ PAGE = """<!doctype html>
 <div id="info">waiting for the sim...</div>
 <div><a href="dashboard" style="color:var(--robot)">device dashboard</a> &middot;
   <a href="field" style="color:var(--robot)">field control</a> &middot;
+  <a href="screen" style="color:var(--robot)">brain screen</a> &middot;
   brain button: <button id="tapbtn" style="background:var(--tile);color:var(--fg);border:1px solid var(--line);border-radius:4px">tap</button></div>
 <pre id="screen" hidden></pre>
 <div id="pad">
@@ -269,7 +276,8 @@ for (const mode of ['NONE', 'DRIVER', 'AUTONOMOUS', 'DISABLED']) {
 
 class FieldView:
     def __init__(self, port: int,
-                 on_input: Callable[[dict], None] | None = None):
+                 on_input: Callable[[dict], None] | None = None,
+                 screen: "brainscreen.BrainScreen | None" = None):
         self._lock = threading.Lock()
         self._state = {"t": 0.0, "x": 0.0, "y": 0.0, "heading": 0.0,
                        "v": 0.0, "trail": []}
@@ -277,6 +285,7 @@ class FieldView:
         self._devices: dict = {"t": 0.0, "devices": []}
         self._field: dict = {"t": 0.0, "competition": "NONE", "match": None}
         self._on_input = on_input
+        self._screen = screen
         view = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -301,15 +310,64 @@ class FieldView:
                     body, ctype = dashboard.PAGE.encode(), "text/html; charset=utf-8"
                 elif self.path == "/override-field.png":
                     body, ctype = OVERRIDE_FIELD_PNG.read_bytes(), "image/png"
+                elif view._screen and self.path in ("/screen", "/screen.html"):
+                    body, ctype = brainscreen.PAGE.encode(), "text/html; charset=utf-8"
+                elif view._screen and self.path.startswith("/screen.png"):
+                    self._screen_png()
+                    return
                 else:
                     self.send_error(404)
                     return
                 self._reply(200, body, ctype)
 
+            def _screen_png(self):
+                """The latest frame; 304 when it is still frame ?since=N."""
+                query = parse_qs(urlsplit(self.path).query)
+                try:
+                    since = int(query.get("since", ["-1"])[0])
+                except ValueError:
+                    self.send_error(400, "since is a frame number")
+                    return
+                try:
+                    n, png = view._screen.frame()
+                except (OSError, RuntimeError, ValueError) as e:
+                    self.send_error(503, f"brain screen: {e}")
+                    return
+                if n == since:
+                    self.send_response(304)
+                    self.send_header("X-Frame", str(n))
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Frame", str(n))
+                self.send_header("Content-Length", str(len(png)))
+                self.end_headers()
+                self.wfile.write(png)
+
             def do_POST(self):
+                if self.path == "/touch" and view._screen:
+                    self._post_json(self._touch)
+                    return
                 if self.path != "/input" or view._on_input is None:
                     self.send_error(404)
                     return
+                self._post_json(view._on_input)
+
+            def _touch(self, msg):
+                down = msg.get("down")
+                if down is not None and not isinstance(down, bool):
+                    raise ValueError("down is true, false or absent (a move)")
+                x, y = msg["x"], msg["y"]
+                if not all(isinstance(v, (int, float)) for v in (x, y)):
+                    raise ValueError("x and y are screen pixels")
+                try:
+                    view._screen.touch(x, y, down)
+                except (OSError, RuntimeError) as e:
+                    raise ValueError(f"brain screen: {e}") from e
+
+            def _post_json(self, handle):
                 # Not a CORS "simple" type, so other web pages can't post here.
                 if self.headers.get_content_type() != "application/json":
                     self.send_error(415, "need Content-Type: application/json")
@@ -325,7 +383,7 @@ class FieldView:
                     msg = json.loads(self.rfile.read(length))
                     if not isinstance(msg, dict):
                         raise ValueError("expected an object")
-                    view._on_input(msg)
+                    handle(msg)
                 except (ValueError, KeyError, TypeError) as e:
                     self.send_error(400, str(e))
                     return

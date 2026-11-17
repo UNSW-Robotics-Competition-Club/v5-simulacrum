@@ -163,6 +163,7 @@ from .field_elements import Obstacle, Opponent, load_obstacles
 from .apriltags import Camera, FieldTag, load_tags, project
 from .drivetrain import INCH, DrivetrainSpec
 from .field_objects import BLOCK_RADIUS_M, Field, RobotBody, layout, step_field
+from .brainscreen import BrainScreen
 from .fieldview import FieldView
 from .match import PAUSE_S, MatchSchedule
 from .mechanism import ArmLoad, arm_angle_deg, step_arm
@@ -1451,6 +1452,9 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--view", type=int, metavar="PORT")
     ap.add_argument("--qmp", default="", metavar="SOCK",
                     help="the brain's QMP socket: lets the field view press its button")
+    ap.add_argument("--screen-qmp", default="", metavar="SOCK",
+                    help="a QMP socket of the brain's own for the field view's "
+                         "/screen page (screen frames and touch)")
     ap.add_argument("--blocks", type=_blocks_arg, metavar="random:N[:SEED]|FILE.json")
     ap.add_argument("--intake", type=_intake_arg, metavar="P[:CAPACITY]")
     ap.add_argument("--arm", action="append", default=[], type=_arm_arg,
@@ -1578,7 +1582,8 @@ def main(argv: list[str] | None = None) -> None:
         robot.use_mujoco()
     robot.qmp_path = args.qmp
     takes_input = True                # dashboard: brain button; plus any controller
-    view = (FieldView(args.view, robot.set_input if takes_input else None)
+    screen = BrainScreen(args.screen_qmp) if args.screen_qmp and args.view else None
+    view = (FieldView(args.view, robot.set_input if takes_input else None, screen)
             if args.view else None)
     if view:
         print(f"field view: http://localhost:{args.view}/", flush=True)
@@ -1593,6 +1598,8 @@ def main(argv: list[str] | None = None) -> None:
     finally:
         if view:
             view.close()
+        if screen:
+            screen.close()
         for p in robot.ports:
             if p.sock:                # a port can be down (reconnecting)
                 p.sock.close()

@@ -130,7 +130,7 @@ for u in sys user; do
   rm -f $T/v5usb-$u.sock
   ports+=(-chardev "socket,id=usb$u,path=$T/v5usb-$u.sock,server=on,wait=off")
 done
-rm -f "$QMP" "$T/v5qmp-robot.sock"
+rm -f "$QMP" "$T/v5qmp-robot.sock" "$T/v5qmp-screen.sock"
 
 # A window shows the screen inside a picture of the brain, with its front
 # button clickable (V5SIM_SKIN=file.ppm overrides, also headless; "" = none).
@@ -172,6 +172,9 @@ sim_python=${V5SIM_PYTHON:-python3}
 # and the battery model reports to it, without waiting on a script's QMP
 ROBOT_QMP=$T/v5qmp-robot.sock
 [ -n "$robot_args" ] && robot_args="$robot_args --qmp $ROBOT_QMP"
+# and a third for the field view's /screen page (frames + touch), which holds
+# its connection open: the brain's screen in a browser or VS Code
+[ -n "$robot_args" ] && robot_args="$robot_args --screen-qmp $T/v5qmp-screen.sock"
 # the instance's field view (the last --view wins over a preset's); another
 # instance's robot also gets its own sockets
 [ -n "$robot_args" ] && robot_args="$robot_args --view $VIEW"
@@ -226,7 +229,7 @@ if [ -n "$run_file" ]; then
 fi
 
 info="instance $id: QMP $QMP, log $CONSOLE_LOG"
-[ -n "$robot_args" ] && info="$info, field view http://localhost:$VIEW/"
+[ -n "$robot_args" ] && info="$info, field view http://localhost:$VIEW/, brain screen http://localhost:$VIEW/screen"
 [ "$usb" = 1 ] && info="$info, USB $T/ttyV5sys $T/ttyV5user"
 [ "$usb" = ip ] && info="$info, USB/IP localhost:$USBIP_PORT busid 1-1"
 echo "[v5brain] $info" >&2
@@ -238,6 +241,7 @@ echo "[v5brain] $info" >&2
   -serial chardev:cons -mon chardev=cons,mode=readline \
   -qmp unix:$QMP,server,nowait \
   -qmp unix:$T/v5qmp-robot.sock,server,nowait \
+  -qmp unix:$T/v5qmp-screen.sock,server,nowait \
   -device loader,file=$B/p0_FSBL_ps_00000000.bin,addr=0x0,force-raw=on \
   -device loader,file=$B/p2_MainLoop_ps_01000000.bin,addr=0x01000000,force-raw=on \
   -device loader,file=$B/p3_system_0_ps_03400000.bin,addr=0x03400000,force-raw=on \

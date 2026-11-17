@@ -114,6 +114,14 @@ The V5 brain's front button works as on a real brain: a **tap** goes Back / Home
 - in the field view: the **tap** button under the field, or on the dashboard: tap, hold 1.5 s, hold 5 s;
 - from a script: `python3 scripts/v5ctl.py /tmp/v5qmp.sock button:1.5`, or post `{"brain_button": 1.5}` to the field view's `/input`.
 
+### The brain screen in a browser (http://localhost:8765/screen)
+
+The same screen as the brain window, as a web page: click or drag on it to touch, and the buttons under it press the brain's button (tap, hold 1.5 s, hold 5 s). It works with `V5SIM_HEADLESS=1` or `V5Sim start` too, where there is no window. The field view links to it. The robot sim takes frames from QEMU only while a page is open (up to 20 a second, `/screen.png`) and posts touches to it (`/touch`, `{"x": 0..479, "y": 0..271, "down": true|false}`, no `down` = a drag).
+
+### In VS Code
+
+The **V5 Brain Simulator** extension ([v5-simulacrum-vscode](https://github.com/UNSW-Robotics-Competition-Club/v5-simulacrum-vscode)) runs the sim from VS Code: `V5 Sim: Start` / `Stop` / `Restart`, the brain screen, device dashboard and field view as panes, and **Configure Ports**, a port map editor for the robot preset (pick the device on each smart port and 3-wire port, drag to move, Apply & restart). It runs `scripts/v5brain.sh` in WSL as `V5Sim` does and stops it gracefully. Set `v5sim.repoPath` to this checkout if it isn't open in the workspace. See the extension's README.
+
 ### The device dashboard (http://localhost:8765/dashboard)
 
 Every device on the robot, live: each motor's position, velocity, voltage, current, power, temperature, control mode and target, as the brain sees them, with rolling 15 s charts of velocity against its target and position against its target; and every sensor's reading (IMU heading, rotation, distance, optical, vision, ADI, controller). The field view links to it. The same data is at `/devices.json` for scripts.
