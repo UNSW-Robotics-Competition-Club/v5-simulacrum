@@ -42,52 +42,154 @@ PAGE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>V5 Field View</title>
 <style>
-  :root { --bg:#14161a; --tile:#2a2e35; --line:#3b4049; --fg:#e8eaed;
-          --robot:#4ea1ff; --opponent:#c05cff; --trail:#f2b84b; --muted:#9aa0a6;
-          --red:#e5484d; --blue:#3e8ef7; }
-  body { margin:0; background:var(--bg); color:var(--fg);
-         font:14px system-ui, sans-serif; display:flex; flex-direction:column;
-         align-items:center; padding:16px; gap:8px; }
-  canvas { width:min(92vw, 75vh); height:min(92vw, 75vh); border-radius:6px; }
-  #info { font-variant-numeric:tabular-nums; }
-  #screen { margin:0; padding:6px 10px; background:#0b0c0e; color:#9ef0a8;
-            border:1px solid var(--line); border-radius:4px;
-            font:13px ui-monospace, monospace; min-width:19ch; }
-  #pad { color:var(--muted); text-align:center; max-width:640px; }
-  #pad button { background:var(--tile); color:var(--fg); border:1px solid var(--line);
-                border-radius:4px; padding:4px 10px; margin:2px; cursor:pointer; }
-  #pad button.on { background:var(--robot); color:#000; }
-  #pad label { cursor:pointer; }
-  #gamepad { color:var(--fg); }
+  :root { --bg:#111317; --card:#1a1d23; --card2:#22262d; --line:#2f343d; --fg:#e8eaed;
+          --muted:#9aa0a6; --dim:#6b7079; --accent:#4ea1ff;
+          --tile:#2a2e35; --tile2:#2e333b; --seam:#3a404a;
+          --robot:#4ea1ff; --opponent:#c05cff; --trail:#f2b84b;
+          --red:#e5484d; --blue:#3e8ef7; --auton:#f2a93b; --driver:#3cc46c; --off:#6b7079; }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, sans-serif; }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 16px;
+           border-bottom:1px solid var(--line); background:var(--card); position:sticky; top:0; z-index:1; }
+  header h1 { font-size:15px; margin:0 8px 0 0; letter-spacing:.02em; }
+  nav { display:flex; gap:4px; flex-wrap:wrap; }
+  nav a { color:var(--muted); text-decoration:none; padding:4px 10px; border-radius:999px; }
+  nav a:hover { color:var(--fg); background:var(--card2); }
+  nav a.on { color:var(--fg); background:var(--card2); box-shadow:inset 0 0 0 1px var(--line); }
+  header .spacer { flex:1; }
+  button { font:inherit; color:var(--fg); background:var(--card2); border:1px solid var(--line);
+           border-radius:6px; padding:5px 10px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  main { display:grid; grid-template-columns:minmax(0, 1fr) 320px; gap:16px; padding:16px;
+         max-width:1280px; margin:0 auto; align-items:start; }
+  @media (max-width: 900px) { main { grid-template-columns:1fr; } }
+  .fieldwrap { position:relative; background:var(--card); border:1px solid var(--line);
+               border-radius:10px; padding:12px; }
+  canvas { display:block; width:min(100%, max(320px, calc(100vh - 120px))); aspect-ratio:1;
+           margin:0 auto; border-radius:6px; outline:none; }
+  canvas:focus-visible { box-shadow:0 0 0 2px var(--accent); }
+  #info { position:absolute; left:24px; bottom:22px; padding:4px 10px; border-radius:6px;
+          background:rgba(17,19,23,.82); color:var(--muted); font-size:12px; pointer-events:none; }
+  #focus { position:absolute; right:24px; bottom:22px; padding:4px 10px; border-radius:6px;
+           background:rgba(17,19,23,.82); color:var(--muted); font-size:12px; pointer-events:none; }
+  aside { display:grid; gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; }
+  .card h2 { margin:0 0 10px; font-size:11px; font-weight:600; letter-spacing:.08em;
+             text-transform:uppercase; color:var(--muted); }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .stat { background:var(--card2); border-radius:8px; padding:8px 10px; }
+  .stat span { display:block; font-size:11px; color:var(--muted); }
+  .stat b { font-size:20px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .stat small { color:var(--muted); font-size:12px; margin-left:2px; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .chip { font-size:12px; padding:2px 8px; border-radius:999px; background:var(--card2); color:var(--muted); }
+  .score { display:flex; gap:8px; margin-top:8px; }
+  .score div { flex:1; text-align:center; border-radius:8px; padding:6px; font-weight:700;
+               font-size:18px; font-variant-numeric:tabular-nums; }
+  .score .r { background:color-mix(in srgb, var(--red) 25%, transparent); color:#ffb3b5; }
+  .score .b { background:color-mix(in srgb, var(--blue) 25%, transparent); color:#b3d0ff; }
+  #comp { display:grid; grid-template-columns:repeat(4, 1fr); background:var(--card2);
+          border-radius:8px; padding:3px; gap:3px; }
+  #comp button { border:0; background:none; color:var(--muted); padding:6px 0; font-size:12px;
+                 border-radius:6px; text-transform:capitalize; }
+  #comp button.on { color:#0b0c0e; font-weight:600; }
+  #comp button.on[data-mode=NONE] { background:var(--fg); }
+  #comp button.on[data-mode=DRIVER] { background:var(--driver); }
+  #comp button.on[data-mode=AUTONOMOUS] { background:var(--auton); }
+  #comp button.on[data-mode=DISABLED] { background:var(--off); color:var(--fg); }
+  #screen { margin:0 0 8px; padding:8px 10px; background:#0b1a0e; color:#9ef0a8;
+            border:1px solid #1f3b25; border-radius:6px; font:13px/1.35 ui-monospace, monospace;
+            white-space:pre; overflow:hidden; }
+  #gamepad { font-size:12px; color:var(--muted); }
+  .keys { display:grid; grid-template-columns:auto 1fr; gap:4px 10px; font-size:12px;
+          color:var(--muted); margin-top:8px; }
+  kbd { font:11px ui-monospace, monospace; color:var(--fg); background:var(--card2);
+        border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:0 5px; }
+  details summary { cursor:pointer; color:var(--muted); font-size:12px; margin-top:8px; }
+  label.toggle { display:flex; align-items:center; gap:8px; cursor:pointer; }
+  .legend { display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:8px; }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px;
+              vertical-align:-1px; }
 </style></head><body>
-<canvas id="c" width="720" height="720"></canvas>
-<div id="info">waiting for the sim...</div>
-<div><a href="dashboard" style="color:var(--robot)">device dashboard</a> &middot;
-  <a href="field" style="color:var(--robot)">field control</a> &middot;
-  <a href="screen" style="color:var(--robot)">brain screen</a> &middot;
-  brain button: <button id="tapbtn" style="background:var(--tile);color:var(--fg);border:1px solid var(--line);border-radius:4px">tap</button></div>
-<pre id="screen" hidden></pre>
-<div id="pad">
-  Controller (click the field first): W/S left stick Y, A/D right stick X,
-  arrows right Y / left X, J=A K=B U=X I=Y, Q=L1 E=R1 Z=L2 C=R2.
-  Or plug in an Xbox (or any standard) gamepad and press a button:
-  sticks are the V5 sticks, A B X Y, LB RB = L1 R1, LT RT = L2 R2, d-pad = arrows.
-  <div id="gamepad">no gamepad</div>
-  <div><label><input type="checkbox" id="override"> Override field</label></div>
-  <div id="comp"></div>
-</div>
+<header>
+  <h1>V5 Simulator</h1>
+  <nav><a class="on" href="./">Field</a><a href="dashboard">Devices</a>
+       <a href="field">Field control</a><a href="screen">Brain screen</a></nav>
+  <span class="spacer"></span>
+  <button id="tapbtn" title="Tap the brain's button: Back / Home">Brain button</button>
+</header>
+<main>
+  <section class="fieldwrap">
+    <canvas id="c" width="720" height="720" tabindex="0" aria-label="Field, audience view"></canvas>
+    <div id="info">waiting for the sim...</div>
+    <div id="focus">click the field to drive</div>
+  </section>
+  <aside>
+    <div class="card">
+      <h2>Robot</h2>
+      <div class="stats">
+        <div class="stat"><span>X</span><b id="sx">-</b><small>in</small></div>
+        <div class="stat"><span>Y</span><b id="sy">-</b><small>in</small></div>
+        <div class="stat"><span>Heading</span><b id="sh">-</b><small>°</small></div>
+        <div class="stat"><span>Speed</span><b id="sv">-</b><small>m/s</small></div>
+      </div>
+      <div class="chips"><span class="chip" id="st">t 0.0 s</span><span class="chip" id="sheld" hidden></span></div>
+      <div class="score" id="score" hidden><div class="r" id="scr">0</div><div class="b" id="scb">0</div></div>
+    </div>
+    <div class="card">
+      <h2>Competition</h2>
+      <div id="comp"></div>
+    </div>
+    <div class="card" id="pad">
+      <h2>Controller</h2>
+      <pre id="screen" hidden></pre>
+      <div id="gamepad">no gamepad</div>
+      <details><summary>Keyboard and gamepad keys</summary>
+        <div class="keys">
+          <span><kbd>W</kbd><kbd>S</kbd></span><span>left stick up / down (Axis3)</span>
+          <span><kbd>A</kbd><kbd>D</kbd></span><span>right stick left / right (Axis1)</span>
+          <span><kbd>↑</kbd><kbd>↓</kbd></span><span>right stick up / down (Axis2)</span>
+          <span><kbd>←</kbd><kbd>→</kbd></span><span>left stick left / right (Axis4)</span>
+          <span><kbd>J</kbd><kbd>K</kbd><kbd>U</kbd><kbd>I</kbd></span><span>A B X Y</span>
+          <span><kbd>Q</kbd><kbd>E</kbd><kbd>Z</kbd><kbd>C</kbd></span><span>L1 R1 L2 R2</span>
+          <span><kbd>1</kbd>–<kbd>4</kbd></span><span>optical gesture up / down / left / right</span>
+          <span><kbd>T</kbd></span><span>hold the Light Tower button</span>
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin:8px 0 0">A gamepad (Xbox or any
+        standard one): its sticks are the V5 sticks; A B X Y, LB RB = L1 R1, LT RT = L2 R2,
+        d-pad = arrows. Press a button on it with this page in front.</p>
+      </details>
+    </div>
+    <div class="card">
+      <h2>Display</h2>
+      <label class="toggle"><input type="checkbox" id="override"> V5RC Override field layout</label>
+      <div class="legend"><span><i style="background:var(--robot)"></i>robot</span>
+        <span><i style="background:var(--trail)"></i>trail</span>
+        <span><i style="background:var(--opponent)"></i>opponent</span>
+        <span><i style="background:var(--red)"></i><i style="background:var(--blue)"></i>blocks</span></div>
+    </div>
+  </aside>
+</main>
 <script>
 // Audience view, in the field frame VEX/RW-Template use: red wall left,
 // audience at the bottom, +Y up. The sim's frame is turned: sim +x = RW +Y,
 // sim +y = RW -X.
-const IN = 0.0254, HALF_IN = 70.25, TILE_IN = 2 * HALF_IN / 6;
-const FIELD = 2 * HALF_IN * IN, PAD = 12, TILES = 6, ROBOT = 0.4572, BLOCK = 0.045;
+const IN = 0.0254, HALF_IN = 70.25;
+const FIELD = 2 * HALF_IN * IN, TILES = 6, ROBOT = 0.4572, BLOCK = 0.045;
 const c = document.getElementById('c'), g = c.getContext('2d');
 const info = document.getElementById('info');
-const css = n => getComputedStyle(document.documentElement).getPropertyValue(n);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let PAD = 28, K = 1;                       // margin and line scale, in canvas pixels
 const px = m => m / FIELD * (c.width - 2 * PAD);
 function rwCanvas(xin, yin) { return [c.width / 2 + px(xin * IN), c.height / 2 - px(yin * IN)]; }
 function toCanvas(x, y) { return rwCanvas(-y / IN, x / IN); }
+function fit() {                           // sharp on high-DPI screens
+  const w = Math.round(c.clientWidth * (window.devicePixelRatio || 1));
+  if (w > 0 && c.width !== w) { c.width = c.height = w; }
+  K = c.width / 720; PAD = 28 * K;
+}
+addEventListener('resize', fit);
 const overrideBox = document.getElementById('override');
 try { overrideBox.checked = localStorage.getItem('override') !== 'off'; }
 catch (e) { overrideBox.checked = true; }
@@ -105,80 +207,112 @@ function drawOverride(fx, fy, side) {
   const m = side * WALL_PX / FIELD_PX;
   g.drawImage(overrideImg, fx - m, fy - m, side + 2 * m, side + 2 * m);
 }
+function robotShape(color, outline) {
+  const s = px(ROBOT), r = s * 0.12;
+  g.fillStyle = color; g.globalAlpha = 0.9;
+  g.beginPath(); g.roundRect(-s / 2, -s / 2, s, s, r); g.fill();
+  g.globalAlpha = 1; g.lineWidth = 2 * K; g.strokeStyle = outline; g.stroke();
+  g.fillStyle = outline;                   // heading: an arrow to the front
+  g.beginPath(); g.moveTo(s * 0.42, 0); g.lineTo(s * 0.08, -s * 0.2); g.lineTo(s * 0.08, s * 0.2);
+  g.closePath(); g.fill();
+}
 
 function draw(s) {
-  g.fillStyle = css('--bg'); g.fillRect(0, 0, c.width, c.height);
-  const [fx, fy] = rwCanvas(-HALF_IN, HALF_IN), side = px(FIELD);
-  g.fillStyle = css('--tile'); g.fillRect(fx, fy, side, side);
-  g.strokeStyle = css('--line'); g.lineWidth = 2;
+  fit();
+  g.fillStyle = css('--card'); g.fillRect(0, 0, c.width, c.height);
+  const [fx, fy] = rwCanvas(-HALF_IN, HALF_IN), side = px(FIELD), t = side / TILES;
+  for (let i = 0; i < TILES; i++) for (let j = 0; j < TILES; j++) {
+    g.fillStyle = css((i + j) % 2 ? '--tile2' : '--tile');
+    g.fillRect(fx + i * t, fy + j * t, t, t);
+  }
+  g.strokeStyle = css('--seam'); g.lineWidth = 1.5 * K;
   for (let i = 1; i < TILES; i++) {
-    const p = i * side / TILES;
-    g.beginPath(); g.moveTo(fx + p, fy); g.lineTo(fx + p, fy + side); g.stroke();
-    g.beginPath(); g.moveTo(fx, fy + p); g.lineTo(fx + side, fy + p); g.stroke();
+    g.beginPath(); g.moveTo(fx + i * t, fy); g.lineTo(fx + i * t, fy + side); g.stroke();
+    g.beginPath(); g.moveTo(fx, fy + i * t); g.lineTo(fx + side, fy + i * t); g.stroke();
   }
   if (overrideBox.checked) drawOverride(fx, fy, side);
-  g.strokeStyle = css('--muted'); g.lineWidth = 4; g.strokeRect(fx, fy, side, side);
-  g.strokeStyle = css('--trail'); g.lineWidth = 2; g.beginPath();
-  s.trail.forEach(([x, y], i) => { const [a, b] = toCanvas(x, y);
-    i ? g.lineTo(a, b) : g.moveTo(a, b); });
-  g.stroke();
-  g.strokeStyle = css('--muted'); g.lineWidth = 2; g.setLineDash([6, 4]);
-  g.fillStyle = css('--muted'); g.font = '12px system-ui';
+  // the perimeter, red alliance wall on the left and blue on the right
+  const w = 6 * K;
+  g.lineWidth = w; g.strokeStyle = css('--dim'); g.strokeRect(fx - w / 2, fy - w / 2, side + w, side + w);
+  g.strokeStyle = css('--red'); g.beginPath(); g.moveTo(fx - w / 2, fy); g.lineTo(fx - w / 2, fy + side); g.stroke();
+  g.strokeStyle = css('--blue'); g.beginPath(); g.moveTo(fx + side + w / 2, fy); g.lineTo(fx + side + w / 2, fy + side); g.stroke();
+  g.fillStyle = css('--muted'); g.font = `${11 * K}px system-ui`; g.textAlign = 'center';
+  g.fillText('AUDIENCE', c.width / 2, fy + side + 23 * K);
+  g.textAlign = 'left';
+  // the trail, fading from old to new
+  const tr = s.trail || [];
+  g.lineWidth = 2.5 * K; g.lineCap = 'round'; g.strokeStyle = css('--trail');
+  for (let i = 1; i < tr.length; i++) {
+    const [a, b] = toCanvas(...tr[i - 1]), [d, e] = toCanvas(...tr[i]);
+    g.globalAlpha = 0.15 + 0.75 * i / tr.length;
+    g.beginPath(); g.moveTo(a, b); g.lineTo(d, e); g.stroke();
+  }
+  g.globalAlpha = 1;
+  g.font = `${12 * K}px system-ui`;
   for (const [name, [x0, y0, x1, y1]] of s.goals || []) {
     const [ax, ay] = toCanvas(x0, y0), [bx, by] = toCanvas(x1, y1);
-    const [lx, ty] = [Math.min(ax, bx), Math.min(ay, by)];
-    g.strokeRect(lx, ty, Math.abs(bx - ax), Math.abs(by - ay));
-    g.fillText(name, lx + 3, ty + 13);
+    const [lx, ty] = [Math.min(ax, bx), Math.min(ay, by)], gw = Math.abs(bx - ax), gh = Math.abs(by - ay);
+    g.fillStyle = 'rgba(242,184,75,.08)'; g.fillRect(lx, ty, gw, gh);
+    g.strokeStyle = css('--trail'); g.lineWidth = 1.5 * K; g.setLineDash([6 * K, 4 * K]);
+    g.strokeRect(lx, ty, gw, gh); g.setLineDash([]);
+    g.fillStyle = css('--fg'); g.fillText(name, lx + 4 * K, ty + 14 * K);
   }
-  g.setLineDash([]);
-  g.fillStyle = css('--muted');
+  g.fillStyle = css('--dim');
   for (const [kind, x, y, sx, sy, r, ang] of s.obstacles || []) {
     const [ox, oy] = toCanvas(x, y);
-    g.save(); g.translate(ox, oy); g.rotate(-ang); g.globalAlpha = 0.8;
+    g.save(); g.translate(ox, oy); g.rotate(-ang); g.globalAlpha = 0.9;
     g.beginPath();
-    if (kind === 'box') g.rect(-px(sy * 2) / 2, -px(sx * 2) / 2,
-                               px(sy * 2), px(sx * 2));
+    if (kind === 'box') g.rect(-px(sy * 2) / 2, -px(sx * 2) / 2, px(sy * 2), px(sx * 2));
     else g.arc(0, 0, px(r), 0, 2 * Math.PI);
     g.fill(); g.restore();
   }
   for (const [x, y, h] of s.opponents || []) {
     const [ox, oy] = toCanvas(x, y);
     g.save(); g.translate(ox, oy); g.rotate(-h - Math.PI / 2);
-    g.fillStyle = css('--opponent'); g.globalAlpha = 0.85;
-    g.fillRect(-px(ROBOT) / 2, -px(ROBOT) / 2, px(ROBOT), px(ROBOT));
-    g.globalAlpha = 1; g.strokeStyle = css('--fg'); g.lineWidth = 2;
-    g.beginPath(); g.moveTo(0, 0); g.lineTo(px(ROBOT) * 0.6, 0); g.stroke();
-    g.restore();
+    robotShape(css('--opponent'), css('--fg')); g.restore();
   }
   for (const [x, y, color] of s.blocks || []) {
     const [bx, by] = toCanvas(x, y);
     g.fillStyle = css(color === 'red' ? '--red' : '--blue');
     g.beginPath(); g.arc(bx, by, px(BLOCK), 0, 2 * Math.PI); g.fill();
+    g.lineWidth = 1.5 * K; g.strokeStyle = 'rgba(0,0,0,.45)'; g.stroke();
   }
   const [rx, ry] = toCanvas(s.x, s.y);
   g.save(); g.translate(rx, ry); g.rotate(-s.heading - Math.PI / 2);   // sim +x is up
-  g.fillStyle = css('--robot'); g.globalAlpha = 0.85;
-  g.fillRect(-px(ROBOT) / 2, -px(ROBOT) / 2, px(ROBOT), px(ROBOT));
-  g.globalAlpha = 1; g.strokeStyle = css('--fg'); g.lineWidth = 3;
-  g.beginPath(); g.moveTo(0, 0); g.lineTo(px(ROBOT) * 0.6, 0); g.stroke();
+  g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowBlur = 10 * K;
+  robotShape(css('--robot'), '#ffffff');
   g.restore();
   // RW-Template / mikLib coordinates: inches, heading clockwise from +Y
   const rwHeading = ((-s.heading * 180 / Math.PI) % 360 + 360) % 360;
-  info.textContent = `t ${s.t.toFixed(1)} s   x ${(-s.y / IN).toFixed(1)} in   ` +
-    `y ${(s.x / IN).toFixed(1)} in   heading ${rwHeading.toFixed(1)}°   ` +
-    `v ${s.v.toFixed(2)} m/s` +
-    (s.held && s.held.length ? `   holding ${s.held.join(' ')}` : '') +
-    (s.score ? `   score red ${s.score.red} blue ${s.score.blue}` : '');
+  document.getElementById('sx').textContent = (-s.y / IN).toFixed(1);
+  document.getElementById('sy').textContent = (s.x / IN).toFixed(1);
+  document.getElementById('sh').textContent = rwHeading.toFixed(1);
+  document.getElementById('sv').textContent = s.v.toFixed(2);
+  document.getElementById('st').textContent = `t ${s.t.toFixed(1)} s`;
+  const heldEl = document.getElementById('sheld');
+  heldEl.hidden = !(s.held && s.held.length);
+  if (!heldEl.hidden) heldEl.textContent = `holding ${s.held.join(' ')}`;
+  document.getElementById('score').hidden = !s.score;
+  if (s.score) {
+    document.getElementById('scr').textContent = `Red ${s.score.red}`;
+    document.getElementById('scb').textContent = `Blue ${s.score.blue}`;
+  }
+  info.hidden = true;
   const scr = document.getElementById('screen');
   scr.hidden = !(s.screen && s.screen.length);
   if (!scr.hidden) scr.textContent = s.screen.map(l => l.padEnd(19)).join('\\n');
 }
 async function poll() {
   try { draw(await (await fetch('state.json')).json()); }
-  catch (e) { info.textContent = 'sim not reachable'; }
+  catch (e) { info.hidden = false; info.textContent = 'sim not reachable'; }
   setTimeout(poll, 50);
 }
 poll();
+// keys reach the page once it has focus (a click anywhere on it)
+const focusHint = document.getElementById('focus');
+const showHint = () => { focusHint.hidden = document.hasFocus(); };
+addEventListener('focus', showHint); addEventListener('blur', showHint); showHint();
+c.addEventListener('mousedown', () => c.focus());
 
 const AXES = { w: ['Axis3', 127], s: ['Axis3', -127], d: ['Axis1', 127],
   a: ['Axis1', -127], ArrowUp: ['Axis2', 127], ArrowDown: ['Axis2', -127],
@@ -219,12 +353,12 @@ function readPad() {
     });
     const live = Object.entries(next.axes).filter(([, v]) => v).map(([a, v]) => `${a} ${v}`)
       .concat(next.buttons).join(', ');
-    padInfo.textContent = `gamepad: ${gp.id}` +
+    padInfo.textContent = `Gamepad: ${gp.id}` +
       (gp.mapping === 'standard' ? '' : ' (non-standard mapping: buttons may be off)') +
-      ` | ${live || 'centred, no buttons'}` +
-      (competition === 'DISABLED' ? ' | competition is DISABLED: the robot ignores input' : '');
+      ` · ${live || 'centred'}` +
+      (competition === 'DISABLED' ? ' · DISABLED: the robot ignores input' : '');
   } else {
-    padInfo.textContent = 'no gamepad seen: with this tab in front, press A on the controller' +
+    padInfo.textContent = 'Keyboard: click the field, then drive. Gamepad: press A on it with this page in front.' +
       (navigator.getGamepads ? '' : ' (this browser has no Gamepad API)');
   }
   const before = JSON.stringify(pad);
@@ -261,9 +395,9 @@ addEventListener('keydown', e => key(e, true));
 addEventListener('keyup', e => key(e, false));
 addEventListener('blur', () => { held.clear(); send(); });
 const comp = document.getElementById('comp');
-for (const mode of ['NONE', 'DRIVER', 'AUTONOMOUS', 'DISABLED']) {
+for (const [mode, label] of [['NONE', 'None'], ['DRIVER', 'Driver'], ['AUTONOMOUS', 'Auton'], ['DISABLED', 'Disabled']]) {
   const b = document.createElement('button');
-  b.textContent = mode.toLowerCase();
+  b.textContent = label; b.dataset.mode = mode;
   b.onclick = () => { competition = mode;
     comp.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
     send(); };

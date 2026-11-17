@@ -1,9 +1,9 @@
 """The field-control page (served by fieldview.FieldView at /field).
 
 A browser stand-in for the field-control app a V5 brain runs as an event's
-field controller: a brain-screen-sized panel with Match / Driver Skills /
-Auton Skills / Manual tabs, the countdown, the phase, Start and Stop, and
-the robot's station (radio link, program, battery). The sim keeps the
+field controller: Match / Driver Skills / Auton Skills / Manual tabs, the
+countdown with the phase and its progress, Start and Stop, and the robot's
+station (radio link, program, battery). The sim keeps the
 clock: Start posts {"field": "match" | "skills_driver" | "skills_auton"}
 to /input and the robot sim runs that schedule (robot.FIELD_RUNS), so the
 brain's banner timer and the radio's field byte stay right even when the
@@ -18,59 +18,77 @@ PAGE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>V5 Field Control</title>
 <style>
-  :root { --bg:#0f1114; --bezel:#22252b; --screen:#000; --bar:#1d2026; --line:#353a43;
-          --fg:#f1f3f4; --muted:#9aa0a6; --red:#d6403a; --blue:#2f7fd8;
-          --auton:#f2a93b; --driver:#3cc46c; --off:#6b7079; }
+  :root { --bg:#111317; --card:#1a1d23; --card2:#22262d; --line:#2f343d; --fg:#f1f3f4;
+          --muted:#9aa0a6; --dim:#6b7079; --accent:#4ea1ff;
+          --red:#e5484d; --blue:#3e8ef7; --auton:#f2a93b; --driver:#3cc46c; --off:#6b7079; }
   * { box-sizing:border-box; }
   [hidden] { display:none !important; }
   body { margin:0; min-height:100vh; background:var(--bg); color:var(--fg);
-         font:14px system-ui, sans-serif; display:flex; flex-direction:column;
-         align-items:center; padding:16px; gap:12px; }
-  .bezel { width:min(960px, 100%); background:var(--bezel); border-radius:18px; padding:14px; }
-  .screen { aspect-ratio:480/272; background:var(--screen); border-radius:4px;
-            display:grid; grid-template-rows:auto 1fr; overflow:hidden;
-            font-size:clamp(9px, 2.1vw, 20px); }
-  .bar { display:flex; align-items:center; gap:.4em; background:var(--bar);
-         padding:.35em .6em; border-bottom:1px solid var(--line); }
-  .bar h1 { font-size:1em; margin:0 auto 0 0; letter-spacing:.04em; }
-  .tab { background:none; color:var(--muted); border:1px solid transparent; border-radius:.3em;
-         font:inherit; font-size:.8em; padding:.25em .6em; cursor:pointer; }
-  .tab.on { color:var(--fg); border-color:var(--line); background:#2a2e35; }
-  .body { display:grid; grid-template-columns:1.6fr 1fr; gap:.6em; padding:.6em; }
-  .clock { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.3em; }
-  #timer { font-size:4.2em; font-weight:700; font-variant-numeric:tabular-nums; line-height:1; }
-  #phase { font-size:.95em; font-weight:700; letter-spacing:.08em; padding:.2em .8em;
-           border-radius:1em; background:var(--off); color:#000; }
-  #period { color:var(--muted); font-size:.75em; }
-  .row { display:flex; gap:.5em; margin-top:.4em; }
-  .big { font:inherit; font-weight:700; font-size:.9em; letter-spacing:.05em; border:0;
-         border-radius:.35em; padding:.55em 1.2em; cursor:pointer; color:#000; }
-  .big:disabled { opacity:.35; cursor:default; }
+         font:14px/1.4 system-ui, sans-serif; }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 16px;
+           border-bottom:1px solid var(--line); background:var(--card); }
+  header h1 { font-size:15px; margin:0 8px 0 0; letter-spacing:.02em; }
+  nav { display:flex; gap:4px; flex-wrap:wrap; }
+  nav a { color:var(--muted); text-decoration:none; padding:4px 10px; border-radius:999px; }
+  nav a:hover { color:var(--fg); background:var(--card2); }
+  nav a.on { color:var(--fg); background:var(--card2); box-shadow:inset 0 0 0 1px var(--line); }
+  main { max-width:980px; margin:0 auto; padding:20px 16px; display:grid; gap:16px; }
+  .tabs { display:grid; grid-template-columns:repeat(4, 1fr); background:var(--card);
+          border:1px solid var(--line); border-radius:10px; padding:4px; gap:4px; }
+  .tab { font:inherit; border:0; background:none; color:var(--muted); padding:8px 0;
+         border-radius:7px; cursor:pointer; }
+  .tab:hover { color:var(--fg); }
+  .tab.on { background:var(--card2); color:var(--fg); box-shadow:inset 0 0 0 1px var(--line); font-weight:600; }
+  .panel { display:grid; grid-template-columns:minmax(0, 1.7fr) minmax(240px, 1fr); gap:16px; }
+  @media (max-width: 760px) { .panel { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h2 { margin:0 0 12px; font-size:11px; font-weight:600; letter-spacing:.08em;
+             text-transform:uppercase; color:var(--muted); }
+  .clock { display:flex; flex-direction:column; align-items:center; gap:12px; padding:28px 16px; }
+  #phase { font-size:13px; font-weight:700; letter-spacing:.12em; padding:4px 14px;
+           border-radius:999px; background:var(--off); color:#0b0c0e; }
+  #timer { font-size:clamp(64px, 14vw, 128px); font-weight:700; line-height:1;
+           font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+  #period { color:var(--muted); text-transform:capitalize; }
+  .track { width:100%; max-width:520px; height:8px; border-radius:999px; background:var(--card2); overflow:hidden; }
+  #progress { height:100%; width:0; background:var(--off); border-radius:999px; transition:width .2s linear; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-top:6px; }
+  .big { font:inherit; font-weight:700; letter-spacing:.06em; border:0; border-radius:10px;
+         padding:12px 28px; cursor:pointer; color:#0b0c0e; min-width:130px; }
+  .big:disabled { opacity:.3; cursor:default; }
   #start { background:var(--driver); } #stop { background:var(--red); color:#fff; }
-  .mode { background:#2a2e35; color:var(--fg); border:1px solid var(--line); }
-  .mode.on { outline:2px solid var(--fg); }
-  .station { border:2px solid var(--red); border-radius:.4em; padding:.5em; align-self:start;
-             display:grid; gap:.35em; font-size:.8em; }
-  .station h2 { margin:0; font-size:1em; color:var(--red); }
-  .dot { display:inline-block; width:.7em; height:.7em; border-radius:50%;
-         background:var(--off); margin-right:.4em; vertical-align:middle; }
-  .dot.ok { background:var(--driver); }
+  .mode { background:var(--card2); color:var(--fg); box-shadow:inset 0 0 0 1px var(--line); }
+  .mode.on[data-mode=DISABLED] { background:var(--off); }
+  .mode.on[data-mode=AUTONOMOUS] { background:var(--auton); color:#0b0c0e; }
+  .mode.on[data-mode=DRIVER] { background:var(--driver); color:#0b0c0e; }
+  .station { border-top:3px solid var(--red); display:grid; gap:10px; align-content:start; }
+  .station h2 { color:#ffb3b5; }
+  .kv { display:flex; justify-content:space-between; gap:8px; padding:8px 10px;
+        background:var(--card2); border-radius:8px; }
+  .kv span:first-child { color:var(--muted); }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+         background:var(--off); margin-right:6px; vertical-align:1px; }
+  .dot.ok { background:var(--driver); box-shadow:0 0 0 3px color-mix(in srgb, var(--driver) 25%, transparent); }
   .muted { color:var(--muted); }
-  footer { color:var(--muted); max-width:960px; line-height:1.5; }
-  footer a { color:var(--blue); }
+  footer { color:var(--muted); font-size:13px; line-height:1.5; }
 </style></head><body>
-<div class="bezel"><div class="screen">
-  <div class="bar">
-    <h1>FIELD CONTROL</h1>
+<header>
+  <h1>V5 Simulator</h1>
+  <nav><a href="./">Field</a><a href="dashboard">Devices</a>
+       <a class="on" href="field">Field control</a><a href="screen">Brain screen</a></nav>
+</header>
+<main>
+  <div class="tabs">
     <button class="tab on" data-tab="match">Match</button>
     <button class="tab" data-tab="skills_driver">Driver Skills</button>
     <button class="tab" data-tab="skills_auton">Auton Skills</button>
     <button class="tab" data-tab="manual">Manual</button>
   </div>
-  <div class="body">
-    <div class="clock">
-      <div id="timer">0:15</div>
+  <div class="panel">
+    <div class="card clock">
       <div id="phase">DISABLED</div>
+      <div id="timer">0:15</div>
+      <div class="track"><div id="progress"></div></div>
       <div id="period"></div>
       <div class="row" id="runbtns">
         <button class="big" id="start">START</button>
@@ -82,20 +100,19 @@ PAGE = """<!doctype html>
         <button class="big mode" data-mode="DRIVER">DRIVER</button>
       </div>
     </div>
-    <div class="station">
-      <h2>RED 1 &middot; ROBOT</h2>
-      <div><span class="dot" id="linkdot"></span><span id="link">no radio</span></div>
-      <div>Program: <span id="prog" class="muted">-</span></div>
-      <div>Battery: <span id="batt" class="muted">-</span></div>
-      <div class="muted" id="field">-</div>
+    <div class="card station">
+      <h2>Red 1 · Robot</h2>
+      <div class="kv"><span>Radio</span><span><span class="dot" id="linkdot"></span><span id="link">no radio</span></span></div>
+      <div class="kv"><span>Program</span><span id="prog" class="muted">-</span></div>
+      <div class="kv"><span>Battery</span><span id="batt" class="muted">-</span></div>
+      <div class="kv"><span>Control</span><span class="muted" id="field">-</span></div>
     </div>
   </div>
-</div></div>
-<footer>
-  The sim runs the clock: a match is 0:15 autonomous, a 2 s pause, then 1:45 driver
-  control; skills runs are 1:00. Manual switches the robot yourself.
-  <a href="./">field view</a> &middot; <a href="dashboard">device dashboard</a>
-</footer>
+  <footer>
+    The sim runs the clock: a match is 0:15 autonomous, a 2 s pause, then 1:45 driver
+    control; skills runs are 1:00. Manual switches the robot yourself.
+  </footer>
+</main>
 <script>
 const RUNS = { match: [15, 105], skills_driver: [0, 60], skills_auton: [60, 0] };
 const COLORS = { DISABLED: 'var(--off)', AUTONOMOUS: 'var(--auton)',
@@ -109,25 +126,30 @@ async function post(msg) {
 const clock = s => { s = Math.max(0, Math.ceil(s));
   return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 
+// [seconds left, period name, length of that period]
 function remaining(f) {
   const m = f.match;
-  if (!m) { const [a, d] = RUNS[tab] || [0, 0]; return [a || d, a ? 'autonomous' : 'driver control']; }
+  if (!m) { const [a, d] = RUNS[tab] || [0, 0]; return [a || d, a ? 'autonomous' : 'driver control', a || d]; }
   const t = f.t, autonEnd = m.start + m.auton, driverStart = autonEnd + m.pause;
-  if (t < autonEnd) return [autonEnd - t, 'autonomous'];
-  if (t < driverStart) return [m.driver, 'pause'];
-  if (t < m.end) return [m.end - t, 'driver control'];
-  return [0, 'ended'];
+  if (t < autonEnd) return [autonEnd - t, 'autonomous', m.auton];
+  if (t < driverStart) return [m.driver, 'pause', m.driver];
+  if (t < m.end) return [m.end - t, 'driver control', m.driver];
+  return [0, 'ended', 1];
 }
 
 function draw(f) {
   last = f;
-  const [secs, period] = remaining(f);
+  const [secs, period, total] = remaining(f);
   document.getElementById('timer').textContent = clock(secs);
+  const color = COLORS[f.competition] || 'var(--off)';
   const phase = document.getElementById('phase');
   phase.textContent = f.competition === 'NONE' ? 'NO COMPETITION' : f.competition;
-  phase.style.background = COLORS[f.competition] || 'var(--off)';
+  phase.style.background = color;
+  const bar = document.getElementById('progress');
+  bar.style.width = (f.match && total ? 100 * (1 - secs / total) : 0) + '%';
+  bar.style.background = color;
   document.getElementById('period').textContent =
-    f.match ? `${f.kind.replace('_', ' ')}: ${period}` : 'ready';
+    f.match ? `${f.kind.replace('_', ' ')} · ${period}` : 'ready';
   document.getElementById('start').disabled = !!(f.match && f.t < f.match.end);
   document.getElementById('stop').disabled = !f.match;
   document.querySelectorAll('.mode').forEach(b =>
