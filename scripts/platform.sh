@@ -34,6 +34,11 @@ v5_path() {
       [ -d "$prefix/opt/python@3.12/libexec/bin" ] && p=$prefix/opt/python@3.12/libexec/bin:$p
     fi
   fi
+  # a bundled Python (the VS Code extension's) first: on a Mac without the
+  # developer tools /usr/bin/python3 is only a stub that offers to install them
+  if [ -n "${V5SIM_PYTHON:-}" ] && [ -x "$V5SIM_PYTHON" ]; then
+    p=$(dirname "$V5SIM_PYTHON"):$p
+  fi
   echo "$p"
 }
 
