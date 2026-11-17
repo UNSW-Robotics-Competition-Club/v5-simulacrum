@@ -1,4 +1,5 @@
 import socket
+import sys
 
 import pytest
 
@@ -101,10 +102,10 @@ def test_optical_counts_follow_the_sensors_integration_time():
     assert s.clear / full_scale(0xEE) == pytest.approx(0.30, abs=0.01)
 
 
-def test_a_closed_port_reboots_its_device_and_reconnects(tmp_path):
+def test_a_closed_port_reboots_its_device_and_reconnects(sock_dir):
     from v5sim.smart_device import LinkMode
     from v5sim.smart_sensors import SmartRotation
-    path = str(tmp_path / "p1.sock")
+    path = f"{sock_dir}/p1.sock"
     server = socket.socket(socket.AF_UNIX)
     server.bind(path)
     server.listen(2)
@@ -641,4 +642,5 @@ def test_open_in_browser_respects_no_browser(monkeypatch):
     assert calls == []
     monkeypatch.delenv("V5SIM_NO_BROWSER")
     robot_mod.open_in_browser("http://localhost:8765/field")
-    assert calls == [(["explorer.exe", "http://localhost:8765/field"],)]
+    opener = "open" if sys.platform == "darwin" else "explorer.exe"
+    assert calls == [([opener, "http://localhost:8765/field"],)]

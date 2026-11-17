@@ -79,8 +79,8 @@ def test_brain_button_presses_through_qmp(monkeypatch):
     assert calls == [("/tmp/v5qmp.sock", 1.5)]
 
 
-def test_press_holds_bit_7_low_then_releases(tmp_path):
-    path = str(tmp_path / "qmp.sock")
+def test_press_holds_bit_7_low_then_releases(sock_dir):
+    path = f"{sock_dir}/qmp.sock"
     srv = socket.socket(socket.AF_UNIX)
     srv.bind(path)
     srv.listen(1)

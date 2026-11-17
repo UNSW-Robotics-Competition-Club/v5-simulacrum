@@ -1,5 +1,4 @@
 import json
-import os
 import socket
 import struct
 import threading
@@ -93,17 +92,6 @@ class FakeQmp:
         self.srv.close()
 
 
-@pytest.fixture
-def sock_dir(tmp_path):
-    # unix socket paths are short: pytest's tmp_path can be too long
-    d = f"/tmp/v5bs{os.getpid()}"
-    os.makedirs(d, exist_ok=True)
-    yield d
-    for f in os.listdir(d):
-        os.unlink(os.path.join(d, f))
-    os.rmdir(d)
-
-
 def test_png_round_trip():
     rgb = bytes(range(256)) * 3                 # 16 x 16 pixels
     assert decode_png(encode_png(rgb, 16, 16)) == (16, 16, rgb)
@@ -130,7 +118,7 @@ def test_crop_takes_the_screen_out_of_the_skin():
 @pytest.mark.parametrize("canvas", [(SCREEN_W, SCREEN_H, 0, 0), (600, 400, 40, 60)])
 def test_frames_and_touch(sock_dir, canvas):
     qmp = FakeQmp(f"{sock_dir}/q.sock", canvas)
-    screen = BrainScreen(qmp.path, f"{sock_dir}/s.ppm", max_fps=1000)
+    screen = BrainScreen(qmp.path, f"{sock_dir}/s.ppm", max_fps=float("inf"))   # no rate limit
     try:
         n, png = screen.frame()
         w, h, rgb = decode_png(png)
@@ -171,7 +159,7 @@ def test_frames_are_rate_limited(sock_dir):
 
 def test_http_screen_routes(sock_dir):
     qmp = FakeQmp(f"{sock_dir}/q.sock")
-    screen = BrainScreen(qmp.path, f"{sock_dir}/s.ppm", max_fps=1000)
+    screen = BrainScreen(qmp.path, f"{sock_dir}/s.ppm", max_fps=float("inf"))   # no rate limit
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]

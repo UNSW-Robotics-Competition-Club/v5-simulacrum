@@ -332,7 +332,9 @@ class FirmwareMotor:
         if not image.is_file():
             raise FileNotFoundError(f"motor firmware {image} (unpack VEXos first)")
         self._own_dir = workdir is None
-        self._dir = Path(workdir or tempfile.mkdtemp(prefix=f"v5{name}-"))
+        # /tmp: QEMU's sockets live here, and macOS's own temp folder
+        # (/var/folders/...) is long for a unix socket path (104 bytes)
+        self._dir = Path(workdir or tempfile.mkdtemp(prefix=f"v5{name}-", dir="/tmp"))
         self._port: _Channel | None = None
         self._plant: _Channel | None = None
         port_sock, plant_sock = self._dir / "port.sock", self._dir / "plant.sock"
