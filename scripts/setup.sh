@@ -44,7 +44,15 @@ if [ "$V5SIM_OS" = macos ]; then
     echo "needs Homebrew (https://brew.sh): install it, then rerun this" >&2; exit 1; }
   if [ "${SKIP_APT:-0}" != 1 ]; then
     echo "== build tools (Homebrew)"
-    brew install ninja meson pkg-config glib pixman sdl2 python@3.12 git
+    pkgs="ninja meson pkg-config glib pixman sdl2 python@3.12 git"
+    # brew exits non-zero when it can't link a formula over another install
+    # (a python.org Python owns /usr/local/bin/python3.12). Linking doesn't
+    # matter here: the scripts use each formula from its own prefix.
+    # shellcheck disable=SC2086
+    brew install $pkgs || echo "(brew reported a problem; checking the packages are installed)"
+    for f in $pkgs; do
+      brew list --versions "$f" >/dev/null || { echo "Homebrew didn't install $f" >&2; exit 1; }
+    done
   fi
   # Homebrew's Python: macOS's own python3 is too old to rely on. v5_path
   # puts it first for every script.
