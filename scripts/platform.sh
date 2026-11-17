@@ -77,7 +77,9 @@ except OSError:
 # doesn't greet a second one, but its socket still accepts the connection.
 unix_listening() {
   if [ "$V5SIM_OS" != macos ] && command -v ss >/dev/null 2>&1; then
-    ss -xl 2>/dev/null | grep -qF " $1 "
+    # grep reads it all (no -q): quitting at the match would SIGPIPE a long
+    # `ss`, and under pipefail (v5fleet.sh) the check would read as false
+    ss -xl 2>/dev/null | grep -F " $1 " >/dev/null
   else
     [ -S "$1" ] && python3 -I -c 'import socket, sys
 s = socket.socket(socket.AF_UNIX)
@@ -93,7 +95,7 @@ finally:
 
 tcp_listening() {
   if [ "$V5SIM_OS" != macos ] && command -v ss >/dev/null 2>&1; then
-    ss -ltn 2>/dev/null | grep -q "127.0.0.1:$1 "
+    ss -ltn 2>/dev/null | grep "127.0.0.1:$1 " >/dev/null    # no -q: see unix_listening
   else
     lsof -nP -iTCP@127.0.0.1:"$1" -sTCP:LISTEN >/dev/null 2>&1
   fi

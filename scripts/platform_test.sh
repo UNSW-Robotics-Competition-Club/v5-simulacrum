@@ -36,6 +36,15 @@ time.sleep(5)' "$t/s.sock" "$t/port" &
   for _ in $(seq 50); do [ -s "$t/port" ] && break; sleep 0.1; done
   check "unix_listening (up)" 'unix_listening "$t/s.sock"'
   check "unix_listening (none)" '! unix_listening "$t/nothing.sock"'
+  if [ "$os" != macos ]; then
+    # under pipefail, grep -q quitting at the match SIGPIPEs a long `ss` and
+    # the check reads as "not listening" (v5fleet stop then did nothing)
+    mkdir -p "$t/bin"
+    printf '#!/bin/sh\necho "u_str LISTEN 0 5 %s 1 * 0"\necho "127.0.0.1:4242 x"\nyes "u_str LISTEN 0 5 /tmp/other 2 * 0" | head -n 200000\n' "$t/s.sock" > "$t/bin/ss"
+    chmod +x "$t/bin/ss"
+    check "unix_listening with a long ss" 'PATH="$t/bin:$PATH" unix_listening "$t/s.sock"'
+    check "tcp_listening with a long ss" 'PATH="$t/bin:$PATH" tcp_listening 4242'
+  fi
   if command -v lsof >/dev/null || [ "$os" != macos ]; then
     check "tcp_listening (up)" 'tcp_listening "$(cat "$t/port")"'
     check "tcp_listening (none)" '! tcp_listening 1'

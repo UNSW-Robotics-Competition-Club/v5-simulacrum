@@ -217,6 +217,9 @@ buttons.forEach(b => {
   b.addEventListener('lostpointercapture', up);
 });
 function key(e, down) {
+  // leave shortcuts alone (Ctrl+C, Cmd+Z...): macOS sends no keyup for a key
+  // released while Cmd is held, which would leave its button stuck down
+  if (down && (e.ctrlKey || e.metaKey || e.altKey)) return;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   if (!(k in KEYS)) return;
   e.preventDefault();

@@ -43,3 +43,11 @@ def test_controller_page_has_every_button_and_never_sends_competition():
     assert set(re.findall(r'data-btn="(\w+)"', page)) == set(BUTTONS)
     assert 'id="lcd"' in page and 'id="rumble"' in page
     assert "competition" not in page.split("<script>", 1)[1].split("JSON.stringify", 1)[1].split(")", 1)[0]
+
+
+def test_controller_page_leaves_shortcuts_alone():
+    # Ctrl+C must not press R2 (and on macOS Cmd+C would leave it stuck)
+    page = controllerpage.PAGE
+    body = page.split("function key(e, down) {", 1)[1].split("}", 1)[0]
+    assert "e.ctrlKey || e.metaKey || e.altKey" in body
+    assert body.index("ctrlKey") < body.index("preventDefault") if "preventDefault" in body else True
