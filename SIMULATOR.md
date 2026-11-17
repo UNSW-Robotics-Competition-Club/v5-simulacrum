@@ -38,6 +38,19 @@ If you give a program, it is installed in slot 1 and started once the brain has 
 
 **Several at once:** each `V5Sim` takes the first free simulator instance. The first one uses the addresses above. If one is already running (yours, or a test run), the next becomes instance N: field view on port 8765+N, USB ports `/tmp/v5simN/ttyV5sys` and `/tmp/v5simN/ttyV5user`, and its own program storage. The `[v5brain] instance N: ...` line it prints says where everything is. Set `V5SIM_ID=N` to pick one; a busy instance refuses to start rather than take over. From WSL, `scripts/v5brain.sh --id N|auto` does the same (it defaults to instance 0, which the e2e checks use).
 
+### On macOS (and Linux)
+
+`./v5sim` in the repo root is the same launcher for a Mac (Apple Silicon or Intel) or a Linux PC, after `bash scripts/setup.sh` (section 2):
+
+```sh
+./v5sim                                    # drivetrain robot, no program
+./v5sim competition path/to/program.bin    # full sensor robot, runs your program
+./v5sim competition my_auton.bin --match 20 --start=-36:-60:0
+./v5sim start competition                  # in the background (no window); ./v5sim list / log / stop
+```
+
+Presets, programs, robot options and instances work as above. The brain's USB is always the two serial ports, `/tmp/ttyV5sys` and `/tmp/ttyV5user` (section 5, "On macOS"). There is no `attach`/`detach`: they're for Windows USB. A background instance has no window; its screen is at http://localhost:8765/screen. Stop it with `./v5sim stop <id>`.
+
 ### Testing your UI code (autonomous selectors, screens)
 
 ```bat
@@ -120,7 +133,7 @@ The same screen as the brain window, as a web page: click or drag on it to touch
 
 ### In VS Code
 
-The **V5 Brain Simulator** extension ([v5-simulacrum-vscode](https://github.com/UNSW-Robotics-Competition-Club/v5-simulacrum-vscode)) runs the sim from VS Code: `V5 Sim: Start` / `Stop` / `Restart`, the brain screen, device dashboard and field view as panes, and **Configure Ports**, a port map editor for the robot preset (pick the device on each smart port and 3-wire port, drag to move, Apply & restart). It runs `scripts/v5brain.sh` in WSL as `V5Sim` does and stops it gracefully. Set `v5sim.repoPath` to this checkout if it isn't open in the workspace. See the extension's README.
+The **V5 Brain Simulator** extension ([v5-simulacrum-vscode](https://github.com/UNSW-Robotics-Competition-Club/v5-simulacrum-vscode)) runs the sim from VS Code: `V5 Sim: Start` / `Stop` / `Restart`, the brain screen, device dashboard and field view as panes, and **Configure Ports**, a port map editor for the robot preset (pick the device on each smart port and 3-wire port, drag to move, Apply & restart). It runs `scripts/v5brain.sh` in WSL as `V5Sim` does (or directly on macOS), and stops it gracefully. Set `v5sim.repoPath` to this checkout if it isn't open in the workspace. See the extension's README.
 
 ### The device dashboard (http://localhost:8765/dashboard)
 
@@ -142,6 +155,7 @@ You need all of the following on the PC:
   bash scripts/setup.sh
   ```
 - **VS Code with the VEXcode extension**, to build VEXcode C++ (section 3). Its toolchain is found automatically.
+- **On a Mac** instead of WSL: macOS 13 or later on Apple Silicon or Intel, Apple's Command Line Tools (`xcode-select --install`) and [Homebrew](https://brew.sh). Clone the repo to a path without spaces and run the same `bash scripts/setup.sh` in Terminal: it installs the build tools and Python 3.12 with Homebrew (no sudo), downloads the firmware, builds QEMU (several minutes the first time), installs the macOS Arm GNU toolchain and makes `~/venvs/sim`. Then run the sim with `./v5sim` (section 1, "On macOS").
 - **Optional:**
   - PROS: the VS Code PROS extension, to build PROS projects.
   - PROS CLI inside WSL, for `pros upload` and `pros terminal`:
@@ -355,6 +369,17 @@ Uploaded programs stay on the simulated brain between runs, like on a real one. 
 
 The VEXcode IDE's Download button needs the brain on Windows' USB: see "On Windows" above.
 
+### On macOS
+
+`./v5sim` exposes the brain's USB as the same two serial ports, `/tmp/ttyV5sys` and `/tmp/ttyV5user` (`/tmp/v5simN/...` for instance N). macOS can't plug a virtual USB device in, so **VEXcode's Download button doesn't see the sim**. Get programs onto it one of these ways:
+
+- **As you start it:** `./v5sim competition build/prog.bin` installs the program in slot 1 and runs it. This works for VEXcode C++ builds and any single-file `.bin`.
+- **From VS Code:** the extension's **V5 Sim: Run Program on Sim** does the same for a running sim, and in a PROS project it runs `pros upload` to the sim's port for you.
+- **PROS CLI** (`pip install pros-cli`, or the PROS VS Code extension's CLI), with the port given, as in WSL above: `pros upload --slot 2 --after run . /tmp/ttyV5sys`, `pros terminal /tmp/ttyV5user`.
+- **VEXcode's uploader**: the VEXcode VS Code extension downloads a `vexcom` for each platform under `~/Library/Application Support/Code/User/globalStorage/vexrobotics.vexcode/tools/vexcom/<version>/` (build a project once first); use the macOS one. Use it like the WSL one above, port last: `vexcom --slot 2 --write build/prog.bin --run /tmp/ttyV5sys`.
+
+Program output: `pros terminal /tmp/ttyV5user`, or `screen /tmp/ttyV5user` (Ctrl-A K quits).
+
 ### Debugging with GDB (vexide/v5gdb)
 
 The sim models the Cortex-A9 debug hardware that [v5gdb](https://github.com/vexide/v5gdb) uses: a debugger built into a vexide (Rust) program that serves GDB over the brain's User port. Attach, software breakpoints (they fire again on each `continue`), `stepi`, Ctrl-C into a running program, registers, memory, backtraces and `detach` all work as on a real brain.
@@ -427,6 +452,7 @@ A controller alone, with no robot behind it (it reports a robot linked and runni
   - Goals are floor zones, not obstacles.
   - The GPS heading convention is a best guess (0 = facing +y).
 - **Debugging:** v5gdb works with software breakpoints and single-step. GDB hardware breakpoints (`hbreak`) and watchpoints aren't verified. There is no JTAG.
+- **macOS:** no Windows-style USB (VEXcode's Download button), see section 5. With `--motor-fw`, the motor firmware's velocity readings may jitter a little more than on Linux, which can make its timers fire later (Linux's timer-slack setting has no macOS equivalent).
 - **Speed:** the simulator runs close to real time. A busy PC can slow it slightly. While v5gdb single-steps, the program runs one instruction per step and so runs much slower.
 
 ---

@@ -14,6 +14,9 @@ Code comments cite `notes/*.md`. Those are the maintainers' protocol notes, whic
 | `sim/tests/` | unit tests: physics, and every device frame checked byte for byte against reference frames captured from real devices |
 | `scripts/v5brain.sh` | main entry: QEMU + robot sim + USB pty bridge (`scripts/v5usb_pty.py`) |
 | `V5Sim.cmd` | Windows launcher around `v5brain.sh` |
+| `v5sim` | macOS / Linux launcher around `v5brain.sh` (same presets and verbs) |
+| `scripts/platform.sh` | what differs between WSL/Linux and macOS (locks, socket checks, checksums, Homebrew's PATH); `scripts/platform_test.sh` checks it. Scripts stay bash 3.2-safe (macOS's `/bin/bash`): no `mapfile`, associative arrays or `${x,,}` |
+| `.github/workflows/install.yml` | a from-scratch `setup.sh` + boot check on macOS arm64, macOS Intel and Ubuntu |
 | `programs/` | test programs and build scripts (`vexcode_build.sh` for VEXcode C++, `build.sh` for plain C) |
 
 ## Tests
@@ -44,6 +47,8 @@ Each end-to-end check boots VEXos, runs a real program and prints what it saw (`
 | `sensors_test`, `aivision_test` | optical + GPS; AI Vision colour signature aim-and-collect |
 | `aitags_test`, `vision_test` | AI Vision AprilTag + colour code; legacy Vision Sensor signature aim |
 | `usb_test`, `vexcom_test` | PROS CLI status/upload/terminal, VEXcode `vexcom` + Python |
+
+On macOS the same commands work from Terminal. `scripts/qemu_run.sh` (a few low-level checks) uses `timeout`: `brew install coreutils` provides it as `gtimeout`, so link it as `timeout` or skip those.
 
 The VEXcode checks build their programs with `programs/test-programs/vexcode_build.sh`, which uses the toolchain and SDK from your VEXcode VS Code extension (Git Bash on Windows).
 

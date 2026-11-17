@@ -23,8 +23,9 @@ What you get:
 
 ## Requirements
 
-- **Windows 10/11 with WSL 2 and Ubuntu 24.04** (`wsl --install -d Ubuntu-24.04`, then open it once to create your user). Setup and the launchers only work there for now. To use a distro with another name, set `V5SIM_DISTRO` for `V5Sim` and use that name in the `wsl -d` commands.
-- About 3 GB free in WSL for QEMU, the Arm toolchain and the MuJoCo venv.
+- **Windows 10/11 with WSL 2 and Ubuntu 24.04** (`wsl --install -d Ubuntu-24.04`, then open it once to create your user). To use a distro with another name, set `V5SIM_DISTRO` for `V5Sim` and use that name in the `wsl -d` commands.
+- **or macOS 13+** (Apple Silicon or Intel) with Apple's Command Line Tools (`xcode-select --install`) and [Homebrew](https://brew.sh). The brain's USB is a pair of serial ports there, for PROS CLI and vexcom; VEXcode's Download button can't see it (SIMULATOR.md section 5).
+- About 3 GB free (in WSL, or in your home folder on a Mac) for QEMU, the Arm toolchain and the MuJoCo venv.
 - Optional: the VEXcode VS Code extension (builds the VEXcode test programs), usbip-win2 (makes the sim show up as a USB brain on Windows).
 
 ## Quick start
@@ -44,6 +45,8 @@ V5Sim ui-test path\to\program.bin           :: on a field controller, disabled: 
 V5Sim start competition                     :: run in the background; V5Sim list / log / stop
 ```
 
+On a Mac, run `bash scripts/setup.sh` in Terminal from the repo, then use `./v5sim` the same way (`./v5sim competition path/to/program.bin`, `./v5sim start competition`, `./v5sim list`). See SIMULATOR.md section 1, "On macOS".
+
 Prerequisites, presets, robot options, uploading, matches and troubleshooting are in **[SIMULATOR.md](SIMULATOR.md)**.
 
 ## Documentation
@@ -59,6 +62,7 @@ Prerequisites, presets, robot options, uploading, matches and troubleshooting ar
 | path | what |
 |---|---|
 | `V5Sim.cmd` | Windows launcher |
+| `v5sim` | macOS / Linux launcher |
 | `qemu-vex/` | QEMU machines `vex-v5` (the brain) and `vex-motor` (a smart motor's LPC824), their device models, plus patches on QEMU v11.1.2 |
 | `sim/` | robot simulator (`v5sim/`), presets (`robots/*.args`) and unit tests |
 | `scripts/` | `v5brain.sh` (main entry), `v5fleet.sh` (instance manager), `setup.sh`, `fetch_firmware.sh`, end-to-end checks (`*_test.sh`, `e2e_all.sh`) |
