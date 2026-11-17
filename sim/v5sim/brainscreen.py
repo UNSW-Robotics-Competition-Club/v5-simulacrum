@@ -185,36 +185,59 @@ PAGE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>V5 Brain Screen</title>
 <style>
-  :root { --bg:#14161a; --tile:#2a2e35; --line:#3b4049; --fg:#e8eaed;
-          --muted:#9aa0a6; --accent:#4ea1ff; }
+  :root { --bg:#111317; --card:#1a1d23; --card2:#22262d; --line:#2f343d; --fg:#e8eaed;
+          --muted:#9aa0a6; --dim:#6b7079; --accent:#4ea1ff; --chrome:72px; }
+  * { box-sizing:border-box; }
   html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
-               font:13px system-ui, sans-serif; }
-  body { display:flex; flex-direction:column; align-items:center;
-         justify-content:center; gap:8px; padding:8px; box-sizing:border-box; }
-  #frame { position:relative; width:min(100%, calc((100vh - 64px) * 480 / 272));
-           aspect-ratio:480/272; background:#000; border:6px solid #23262b;
-           border-radius:8px; box-sizing:content-box; }
+               font:14px/1.4 system-ui, sans-serif; }
+  body { display:flex; flex-direction:column; }
+  body.menu-open { --chrome:122px; }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 16px;
+           border-bottom:1px solid var(--line); background:var(--card); }
+  header[hidden] { display:none; }
+  header h1 { font-size:15px; margin:0 8px 0 0; letter-spacing:.02em; }
+  nav { display:flex; gap:4px; flex-wrap:wrap; }
+  nav a { color:var(--muted); text-decoration:none; padding:4px 10px; border-radius:999px; }
+  nav a:hover { color:var(--fg); background:var(--card2); }
+  nav a.on { color:var(--fg); background:var(--card2); box-shadow:inset 0 0 0 1px var(--line); }
+  main { flex:1; min-height:0; display:flex; flex-direction:column; align-items:center;
+         justify-content:center; gap:10px; padding:10px; }
+  #frame { position:relative; width:min(100%, calc((100vh - var(--chrome)) * 480 / 272));
+           aspect-ratio:480/272; background:#000; border:8px solid var(--card);
+           box-shadow:0 0 0 1px var(--line); border-radius:12px; box-sizing:content-box; }
   canvas { width:100%; height:100%; display:block; image-rendering:pixelated;
-           touch-action:none; cursor:pointer; }
+           touch-action:none; cursor:pointer; border-radius:4px; }
   #msg { position:absolute; inset:0; display:flex; align-items:center;
          justify-content:center; color:var(--muted); pointer-events:none; }
   #msg[hidden] { display:none; }   /* display:flex above would beat [hidden] */
-  #bar { display:flex; gap:6px; align-items:center; flex-wrap:wrap;
-         justify-content:center; }
-  button { background:var(--tile); color:var(--fg); border:1px solid var(--line);
-           border-radius:4px; padding:3px 10px; font:inherit; cursor:pointer; }
+  #bar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; justify-content:center;
+         font-size:12px; color:var(--muted); }
+  #bar .sep { width:1px; align-self:stretch; background:var(--line); margin:0 4px; }
+  button { font:inherit; color:var(--fg); background:var(--card2); border:1px solid var(--line);
+           border-radius:6px; padding:4px 10px; cursor:pointer; }
   button:hover { border-color:var(--accent); }
-  #fps { color:var(--muted); min-width:5em; }
+  #menubtn[aria-expanded="true"] { border-color:var(--accent); color:var(--accent); }
+  #fps { min-width:5em; font-variant-numeric:tabular-nums; }
 </style></head><body>
-<div id="frame"><canvas id="c" width="480" height="272"></canvas>
-  <div id="msg">waiting for the brain...</div></div>
-<div id="bar">
-  <span>brain button:</span>
-  <button data-secs="0.2" title="Back / Home">tap</button>
-  <button data-secs="1.5" title="stops a running program">hold 1.5 s</button>
-  <button data-secs="5" title="with no program running: powers off (ends the sim)">hold 5 s</button>
-  <span id="fps"></span>
-</div>
+<header id="menu" hidden>
+  <h1>V5 Simulator</h1>
+  <nav><a href="./">Field</a><a href="dashboard">Devices</a>
+       <a href="field">Field control</a><a class="on" href="screen">Brain screen</a></nav>
+</header>
+<main>
+  <div id="frame"><canvas id="c" width="480" height="272"></canvas>
+    <div id="msg">waiting for the brain...</div></div>
+  <div id="bar">
+    <button id="menubtn" aria-controls="menu" aria-expanded="false"
+            title="Show or hide the page menu">&#9776; Menu</button>
+    <span class="sep"></span>
+    <span>Brain button</span>
+    <button data-secs="0.2" title="Back / Home">Tap</button>
+    <button data-secs="1.5" title="stops a running program">Hold 1.5 s</button>
+    <button data-secs="5" title="with no program running: powers off (ends the sim)">Hold 5 s</button>
+    <span id="fps"></span>
+  </div>
+</main>
 <script>
 const c = document.getElementById('c'), g = c.getContext('2d');
 const msg = document.getElementById('msg'), fps = document.getElementById('fps');
@@ -267,6 +290,22 @@ c.addEventListener('pointerup', up);
 c.addEventListener('pointercancel', up);
 document.querySelectorAll('button[data-secs]').forEach(b =>
   b.onclick = () => post('input', { brain_button: +b.dataset.secs }));
+
+// the page menu (links to the other pages): hidden by default so the screen
+// gets the room; the choice is remembered in this browser
+const menu = document.getElementById('menu'), menubtn = document.getElementById('menubtn');
+const MENU_KEY = 'v5sim.screen.menu';
+function showMenu(open) {
+  menu.hidden = !open;
+  menubtn.setAttribute('aria-expanded', String(open));
+  document.body.classList.toggle('menu-open', open);
+}
+try { showMenu(localStorage.getItem(MENU_KEY) === 'open'); } catch (e) { showMenu(false); }
+menubtn.onclick = () => {
+  menu.hidden = !menu.hidden;
+  showMenu(!menu.hidden);
+  try { localStorage.setItem(MENU_KEY, menu.hidden ? 'closed' : 'open'); } catch (e) {}
+};
 poll();
 </script></body></html>
 """

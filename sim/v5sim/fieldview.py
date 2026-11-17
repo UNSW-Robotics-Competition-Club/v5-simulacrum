@@ -108,9 +108,6 @@ PAGE = """<!doctype html>
         border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:0 5px; }
   details summary { cursor:pointer; color:var(--muted); font-size:12px; margin-top:8px; }
   label.toggle { display:flex; align-items:center; gap:8px; cursor:pointer; }
-  .legend { display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:8px; }
-  .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px;
-              vertical-align:-1px; }
 </style></head><body>
 <header>
   <h1>V5 Simulator</h1>
@@ -164,10 +161,6 @@ PAGE = """<!doctype html>
     <div class="card">
       <h2>Display</h2>
       <label class="toggle"><input type="checkbox" id="override"> V5RC Override field layout</label>
-      <div class="legend"><span><i style="background:var(--robot)"></i>robot</span>
-        <span><i style="background:var(--trail)"></i>trail</span>
-        <span><i style="background:var(--opponent)"></i>opponent</span>
-        <span><i style="background:var(--red)"></i><i style="background:var(--blue)"></i>blocks</span></div>
     </div>
   </aside>
 </main>

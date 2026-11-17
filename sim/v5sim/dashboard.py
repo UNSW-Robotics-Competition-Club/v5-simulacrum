@@ -14,56 +14,74 @@ PAGE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>V5 Devices</title>
 <style>
-  :root { --bg:#14161a; --card:#1c1f25; --line:#30353e; --fg:#e8eaed; --muted:#9aa0a6;
-          --vel:#4ea1ff; --tgt:#f2b84b; --pos:#57d38c; --warn:#e5484d; }
+  :root { --bg:#111317; --card:#1a1d23; --card2:#22262d; --line:#2f343d; --fg:#e8eaed;
+          --muted:#9aa0a6; --dim:#6b7079; --accent:#4ea1ff;
+          --vel:#4ea1ff; --tgt:#f2b84b; --pos:#57d38c; --warn:#e5484d; --ok:#3cc46c; }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); padding:16px;
-         font:14px system-ui, sans-serif; }
-  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:12px; }
-  h1 { font-size:18px; margin:0 8px 0 0; }
-  a { color:var(--vel); }
-  button { background:var(--card); color:var(--fg); border:1px solid var(--line);
-           border-radius:4px; padding:6px 12px; cursor:pointer; font:inherit; }
-  button:hover { border-color:var(--vel); }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, sans-serif; }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 16px;
+           border-bottom:1px solid var(--line); background:var(--card); position:sticky; top:0; z-index:1; }
+  header h1 { font-size:15px; margin:0 8px 0 0; letter-spacing:.02em; }
+  nav { display:flex; gap:4px; flex-wrap:wrap; }
+  nav a { color:var(--muted); text-decoration:none; padding:4px 10px; border-radius:999px; }
+  nav a:hover { color:var(--fg); background:var(--card2); }
+  nav a.on { color:var(--fg); background:var(--card2); box-shadow:inset 0 0 0 1px var(--line); }
+  header .spacer { flex:1; }
+  button { font:inherit; color:var(--fg); background:var(--card2); border:1px solid var(--line);
+           border-radius:6px; padding:5px 10px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
   button:disabled { opacity:.4; cursor:default; }
-  #t, .num { font-variant-numeric:tabular-nums; }
-  #msg { color:var(--muted); }
+  .num, #t { font-variant-numeric:tabular-nums; }
+  .chip { font-size:12px; padding:2px 8px; border-radius:999px; background:var(--card2); color:var(--muted); }
+  .btngroup { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+  #msg { color:var(--muted); font-size:12px; }
+  main { max-width:1280px; margin:0 auto; padding:16px; display:grid; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; }
+  h2 { margin:0 0 10px; font-size:11px; font-weight:600; letter-spacing:.08em;
+       text-transform:uppercase; color:var(--muted); }
   .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(330px, 1fr)); gap:12px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:10px; }
-  .head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
-  .name { font-weight:600; }
-  .badge { font-size:11px; padding:1px 6px; border-radius:8px; background:var(--line); color:var(--muted); }
-  .badge.DATA { background:#1f4d30; color:#9ef0a8; }
-  .badge.INFO, .badge.ANNOUNCE { background:#4d3a1f; color:#f2c97a; }
-  .stats { display:grid; grid-template-columns:repeat(3, 1fr); gap:2px 10px; margin:6px 0;
-           font-size:12px; color:var(--muted); }
-  .stats b { color:var(--fg); font-weight:500; }
+  .head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; }
+  .name { font-weight:600; display:flex; align-items:center; gap:8px; }
+  .badge { font-size:11px; padding:1px 8px; border-radius:999px; background:var(--card2); color:var(--muted); }
+  .badge.DATA { background:color-mix(in srgb, var(--ok) 22%, transparent); color:#9ef0a8; }
+  .badge.INFO, .badge.ANNOUNCE { background:color-mix(in srgb, var(--tgt) 22%, transparent); color:#f2c97a; }
+  .stats { display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-bottom:8px; }
+  .stats span { background:var(--card2); border-radius:8px; padding:5px 8px; font-size:11px;
+                color:var(--muted); min-height:1.4em; }
+  .stats span:empty, .stats span:has(b:empty) { visibility:hidden; }
+  .stats b { display:block; color:var(--fg); font-size:13px; font-weight:600; }
   .warn { color:var(--warn) !important; }
-  canvas { width:100%; height:90px; display:block; background:#111317; border-radius:4px; }
-  .legend { font-size:11px; color:var(--muted); margin:2px 0 6px; }
+  canvas { width:100%; height:90px; display:block; background:var(--bg); border-radius:6px; }
+  .legend { font-size:11px; color:var(--muted); margin:4px 0 8px; }
   .legend i { display:inline-block; width:10px; height:3px; margin:0 4px 2px 8px; vertical-align:middle; }
+  .legend i:first-child { margin-left:0; }
   table { width:100%; border-collapse:collapse; }
-  td, th { text-align:left; padding:4px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { color:var(--muted); font-weight:500; }
+  td, th { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  tr:last-child td { border-bottom:0; }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
   td.reading { font-family:ui-monospace, monospace; font-size:12px; word-break:break-word; }
-  section { margin-top:16px; }
-  h2 { font-size:15px; margin:0 0 8px; color:var(--muted); font-weight:500; }
+  #motors:empty::before { content:"no motors"; color:var(--muted); }
 </style></head><body>
 <header>
-  <h1>V5 devices</h1>
-  <span id="t" class="num">waiting for the sim...</span>
-  <span>Brain button:
-    <button data-secs="0.2" title="Back / Home">tap</button>
-    <button data-secs="1.5" title="stops a running program">hold 1.5 s (stop program)</button>
-    <button data-secs="3.5" title="with no program running: the brain powers off and the sim closes">hold 3.5 s (power off)</button>
+  <h1>V5 Simulator</h1>
+  <nav><a href="./">Field</a><a class="on" href="dashboard">Devices</a>
+       <a href="field">Field control</a><a href="screen">Brain screen</a></nav>
+  <span class="spacer"></span>
+  <span id="t" class="chip num">waiting for the sim...</span>
+  <span class="btngroup">Brain button
+    <button data-secs="0.2" title="Back / Home">Tap</button>
+    <button data-secs="1.5" title="stops a running program">Hold 1.5 s</button>
+    <button data-secs="3.5" title="with no program running: the brain powers off and the sim closes">Hold 3.5 s</button>
   </span>
   <span id="msg"></span>
-  <a href="/">field view</a>
 </header>
-<section><h2>Motors</h2><div id="motors" class="grid"></div></section>
-<section><h2>Sensors and other devices</h2>
-  <table><thead><tr><th>port</th><th>device</th><th>link</th><th>reading</th></tr></thead>
-  <tbody id="sensors"></tbody></table></section>
+<main>
+  <section><h2>Motors</h2><div id="motors" class="grid"></div></section>
+  <section class="card"><h2>Sensors and other devices</h2>
+    <table><thead><tr><th>Port</th><th>Device</th><th>Link</th><th>Reading</th></tr></thead>
+    <tbody id="sensors"></tbody></table></section>
+</main>
 <script>
 const HISTORY_S = 15, POLL_MS = 100;
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n);
@@ -125,7 +143,7 @@ function chart(canvas, pts, key, tkey, color, show) {
 }
 
 function stat(label, value, warn) {
-  return `<span>${label} <b class="num${warn ? ' warn' : ''}">${value}</b></span>`;
+  return `<span>${label}<b class="num${warn ? ' warn' : ''}">${value}</b></span>`;
 }
 
 function drawMotor(m, t) {

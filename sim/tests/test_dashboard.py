@@ -116,7 +116,7 @@ def test_field_view_serves_the_dashboard_and_device_json():
     port = view._server.server_address[1]
     try:
         ctype, page = get(f"http://127.0.0.1:{port}/dashboard")
-        assert ctype == "text/html" and b"V5 devices" in page
+        assert ctype == "text/html" and b"<title>V5 Devices</title>" in page
         view.publish_devices(3.5, [{"port": 1, "kind": "motor"}])
         ctype, body = get(f"http://127.0.0.1:{port}/devices.json")
         assert json.loads(body) == {"t": 3.5, "devices": [{"port": 1, "kind": "motor"}]}
