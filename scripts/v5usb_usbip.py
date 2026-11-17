@@ -15,8 +15,11 @@ port (EP6 OUT / EP5 IN) goes to and from QEMU's CDC chardevs SYS_SOCK and
 USER_SOCK, the sockets scripts/v5usb_pty.py otherwise turns into ptys. The
 notify endpoints (EP1, EP4 IN) never complete, as on the brain.
 
-USB/IP 1.1.1, one client at a time, localhost only. Everything on the wire
-is big-endian.
+USB/IP 1.1.1, localhost only, one client at a time: while one is attached,
+another import is refused as busy, like Linux usbipd. Two clients would share
+the brain's one queue of IN transfers and get each other's replies, and a
+newest-wins rule makes two auto-reattaching usbip-win2 attachments knock each
+other off every 30 s. Everything on the wire is big-endian.
 """
 from __future__ import annotations
 
@@ -31,6 +34,7 @@ OP_REQ_IMPORT, OP_REP_IMPORT = 0x8003, 0x0003
 CMD_SUBMIT, CMD_UNLINK, RET_SUBMIT, RET_UNLINK = 1, 2, 3, 4
 DIR_OUT, DIR_IN = 0, 1
 EPIPE, ECONNRESET = -32, -104
+ST_OK, ST_NA, ST_DEV_BUSY = 0, 1, 2       # OP_REP_IMPORT status, as usbip_common.h
 SPEED_HIGH = 3
 BUSID = b"1-1"
 BUSNUM, DEVNUM = 1, 1
@@ -117,6 +121,13 @@ class Brain:
         self.rx = {name: bytearray() for name in socks}
         self.pending_in: dict[str, list[tuple[int, int]]] = {name: [] for name in socks}
         self.data_ready = asyncio.Event()
+        self.owner: Session | None = None          # the one attached client
+
+    def release(self, session: Session) -> None:
+        if self.owner is session:
+            self.owner = None
+            for queue in self.pending_in.values():
+                queue.clear()
 
     async def connect(self) -> None:
         for name, path in self.paths.items():
@@ -141,6 +152,11 @@ class Session:
         self.parked: dict[int, tuple[int, int]] = {}     # seqnum -> (ep, length)
         self.alive = True
         self.flusher = asyncio.create_task(self._flush_in())
+
+    def close(self) -> None:
+        self.alive = False
+        self.flusher.cancel()
+        self.writer.close()
 
     def _ret_submit(self, seq: int, status: int, data: bytes = b"",
                     actual: int | None = None) -> None:
@@ -170,6 +186,8 @@ class Session:
 
     def submit(self, seq: int, direction: int, ep: int, length: int, setup: bytes,
                data: bytes) -> None:
+        if not self.alive:                       # replaced: nothing reaches the brain
+            return
         if ep == 0:
             status, reply = control(setup, data)
             self._ret_submit(seq, status, reply if direction == DIR_IN else b"",
@@ -192,9 +210,8 @@ class Session:
         self.writer.write(hdr + struct.pack(">i", status) + bytes(24))
 
 
-async def serve_urbs(brain: Brain, reader: asyncio.StreamReader,
-                     writer: asyncio.StreamWriter) -> None:
-    s = Session(brain, writer)
+async def serve_urbs(s: Session, reader: asyncio.StreamReader) -> None:
+    brain, writer = s.brain, s.writer
     try:
         while True:
             hdr = await reader.readexactly(48)
@@ -214,15 +231,14 @@ async def serve_urbs(brain: Brain, reader: asyncio.StreamReader,
                 raise ValueError(f"unknown USB/IP command {cmd}")
             await writer.drain()
     finally:
-        s.alive = False
-        s.flusher.cancel()
-        for queue in brain.pending_in.values():
-            queue.clear()
+        s.close()
+        brain.release(s)
 
 
 async def handle(brain: Brain, reader: asyncio.StreamReader,
                  writer: asyncio.StreamWriter) -> None:
     peer = writer.get_extra_info("peername")
+    session: Session | None = None
     try:
         while True:
             version, code, _status = struct.unpack(">HHI", await reader.readexactly(8))
@@ -232,20 +248,33 @@ async def handle(brain: Brain, reader: asyncio.StreamReader,
                 await writer.drain()
             elif code == OP_REQ_IMPORT:
                 busid = (await reader.readexactly(32)).rstrip(b"\0")
-                ok = busid == BUSID
-                writer.write(struct.pack(">HHI", VERSION, OP_REP_IMPORT, 0 if ok else 1)
-                             + (device_record() if ok else b""))
+                if busid != BUSID:
+                    status = ST_NA
+                elif brain.owner is not None:
+                    status = ST_DEV_BUSY
+                    print(f"usbip: {peer} refused: the brain is attached to "
+                          f"{brain.owner.writer.get_extra_info('peername')}",
+                          file=sys.stderr, flush=True)
+                else:
+                    status = ST_OK
+                    session = Session(brain, writer)   # claimed before any await
+                    brain.owner = session
+                writer.write(struct.pack(">HHI", VERSION, OP_REP_IMPORT, status)
+                             + (device_record() if status == ST_OK else b""))
                 await writer.drain()
-                if ok:
+                if status == ST_OK:
                     print(f"usbip: {peer} attached the brain", file=sys.stderr, flush=True)
-                    await serve_urbs(brain, reader, writer)
+                    await serve_urbs(session, reader)
                 return
             else:
                 return
-    except (asyncio.IncompleteReadError, ConnectionError):
+    except (asyncio.IncompleteReadError, ConnectionError, OSError):
         pass
     finally:
-        print(f"usbip: {peer} detached", file=sys.stderr, flush=True)
+        if session is not None:                # never leave the brain claimed
+            session.close()
+            brain.release(session)
+            print(f"usbip: {peer} detached", file=sys.stderr, flush=True)
         writer.close()
 
 

@@ -154,15 +154,30 @@ else
   display=(-display sdl,show-cursor=on)
 fi
 
+# The Windows usbip port holding this instance's brain ("" if none), found by
+# its server (usbip://localhost:<port>/), not a saved number another instance
+# may have taken since.
+usbip_vport() {
+  [ -x "${USBIP_EXE:-}" ] || return 0
+  { "$USBIP_EXE" port 2>/dev/null || true; } | tr -d '\r' |
+    awk -v want="usbip://localhost:$USBIP_PORT/" '/^Port [0-9]+:/ { p = $2 + 0 } index($0, want) { print p; exit }' || true
+}
 helpers=()
 cleanup() {
+  # set -e is on here too: nothing below may end the trap before the helpers
+  # are killed (a leftover USB/IP server would hold the port for the next run)
+  set +e
   [ -n "${WIN_TOKEN:-}" ] && rm -f "$RUNS/win-$WIN_TOKEN"
-  for p in "${helpers[@]}"; do kill "$p" 2>/dev/null || true; done
-  # take the USB/IP brain off Windows' USB (the server is gone anyway)
-  if [ "$usb" = ip ] && [ -s "${T:-/tmp}/usbip-vport" ]; then
-    "$USBIP_EXE" detach -p "$(cat "$T/usbip-vport")" > /dev/null 2>&1 || true
-    rm -f "$T/usbip-vport"
+  # Take the brain off Windows' USB first, while its USB/IP server still
+  # answers: tearing a port down after the server is gone can bugcheck
+  # usbip-win2, and the driver starts re-attaching it.
+  if [ "$usb" = ip ]; then
+    local v
+    v=$(usbip_vport)
+    [ -n "$v" ] && "$USBIP_EXE" detach -p "$v" > /dev/null 2>&1 || true
+    rm -f "${T:-/tmp}/usbip-vport"
   fi
+  for p in "${helpers[@]}"; do kill "$p" 2>/dev/null || true; done
 }
 trap cleanup EXIT
 # Closing the brain window (or `kill`) sends TERM/HUP; exit so the EXIT trap
@@ -245,9 +260,22 @@ info="instance $id: QMP $QMP, log $CONSOLE_LOG"
 echo "[v5brain] $info" >&2
 # The brain's serial console goes to stdio (this window, if any) and is also
 # logged to $CONSOLE_LOG so `v5sim log` can follow it live without a window.
+# A hung VEXos can print in a loop (megabytes a second), so the log is capped:
+# past V5SIM_LOG_MAX bytes it keeps its last 256 KB. QEMU appends to it
+# (logappend=on, emptied here first): trimming a file QEMU wrote at its own
+# offset would only leave a sparse file that keeps growing.
 : > "$CONSOLE_LOG"
+LOG_MAX=${V5SIM_LOG_MAX:-20000000}
+(while sleep 2; do
+   size=$(stat -c %s "$CONSOLE_LOG" 2>/dev/null || echo 0)
+   if [ "$size" -gt "$LOG_MAX" ]; then
+     keep=$(tail -c 262144 "$CONSOLE_LOG")
+     printf '[v5brain] console log passed %s bytes: earlier lines dropped\n%s' "$LOG_MAX" "$keep" > "$CONSOLE_LOG"
+   fi
+ done) > /dev/null 2>&1 &    # not on our stdout: its sleep would hold the caller's pipe open
+helpers+=($!)
 "$QEMU" -M "vex-v5,launch-ms=${LAUNCH_MS:-0}${skin:+,skin=$skin}" -smp 2 -m 512M "${display[@]}" \
-  -chardev "stdio,id=cons,mux=on,logfile=$CONSOLE_LOG,logappend=off" \
+  -chardev "stdio,id=cons,mux=on,logfile=$CONSOLE_LOG,logappend=on" \
   -serial chardev:cons -mon chardev=cons,mode=readline \
   -qmp unix:$QMP,server,nowait \
   -qmp unix:$T/v5qmp-robot.sock,server,nowait \

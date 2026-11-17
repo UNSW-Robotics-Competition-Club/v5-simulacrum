@@ -95,8 +95,13 @@ cmd_stop() {
   valid_id "$id" || { echo "bad id: $id (0..$MAX_ID or all)" >&2; return 2; }
   if ! is_up "$id"; then echo "instance $id not running"; return 0; fi
   echo "stopping instance $id ..."
-  # Graceful: QMP quit ends QEMU, which lets v5brain.sh run its EXIT trap and
-  # detach the USB/IP brain from Windows. Fall back to a direct detach.
+  # Detach from Windows first, while the instance's USB/IP server still
+  # answers (detaching after it is gone can bugcheck usbip-win2). Then QMP quit
+  # ends QEMU and v5brain.sh's EXIT trap finds nothing left to detach.
+  local v; v=$(vport_for "$id")
+  if [ -n "$v" ]; then
+    echo "  detach usbip port $v"; "$USBIP_EXE" detach -p "$v" 2>&1 | tr -d '\r' | sed 's/^/  /'
+  fi
   if python3 "$REPO/scripts/v5ctl.py" "$(qmp_path "$id")" quit 2>/dev/null; then
     echo "  QEMU quit sent."
     local i
