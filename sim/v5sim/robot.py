@@ -1569,6 +1569,12 @@ def main(argv: list[str] | None = None) -> None:
     for n, _ in args.arm:
         if n not in [m for m, _, _ in args.motor]:
             ap.error(f"--arm {n}: put a --motor on port {n} first")
+    if args.motor_fw and sys.platform == "darwin":
+        print("warning: --motor-fw on macOS: QEMU's timers there fire in whole "
+              "milliseconds, which the motor firmware's encoder timing can't keep "
+              "up with; its motors run about twice as fast as commanded "
+              "(SIMULATOR.md section 7). Leave --motor-fw off on a Mac.",
+              file=sys.stderr, flush=True)
     robot = build(args)              # connects to every port: validate first
     robot.match = args.match
     if args.competition:

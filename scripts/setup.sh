@@ -22,13 +22,13 @@ XPACK_VER=14.2.1-1.1
 ARM_HOST="" ARM_SHA256=""
 case $V5SIM_OS-$(uname -m) in
   macos-arm64)  XPACK_HOST=darwin-arm64
-                XPACK_SHA256=@XPACK_SHA_DARWIN_ARM64@ ;;
+                XPACK_SHA256=f52ea3760c53b25d726a7345be60a210736293db85f92daa39d1d22d34e2c995 ;;
   macos-x86_64) XPACK_HOST=darwin-x64
-                XPACK_SHA256=@XPACK_SHA_DARWIN_X64@ ;;
+                XPACK_SHA256=b5bf8d5af099fd464d1543e5b8901308fb64116fa7a244426cacf4ff1b882fc7 ;;
   *-x86_64)     ARM_HOST=x86_64
                 ARM_SHA256=62a63b981fe391a9cbad7ef51b17e49aeaa3e7b0d029b36ca1e9c3b2a9b78823
                 XPACK_HOST=linux-x64
-                XPACK_SHA256=@XPACK_SHA_LINUX_X64@ ;;
+                XPACK_SHA256=ed8c7d207a85d00da22b90cf80ab3b0b2c7600509afadf6b7149644e9d4790a6 ;;
   *) echo "no arm-none-eabi toolchain build for $(uname -sm) here" >&2; exit 1 ;;
 esac
 
@@ -98,7 +98,7 @@ if [ ! -x ~/re/arm-gnu/bin/arm-none-eabi-gcc ]; then
   if [ -z "$tarball" ]; then
     f=~/re/dl/xpack-arm-none-eabi-gcc-$XPACK_VER-$XPACK_HOST.tar.gz
     fetch "https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v$XPACK_VER/$(basename "$f")" \
-      "$f" "${V5SIM_XPACK_SHA256:-$XPACK_SHA256}" && tarball=$f
+      "$f" "$XPACK_SHA256" && tarball=$f
   fi
   [ -n "$tarball" ] || { echo "no arm-none-eabi toolchain: check the network and rerun" >&2; exit 1; }
   rm -rf ~/re/arm-gnu && mkdir ~/re/arm-gnu

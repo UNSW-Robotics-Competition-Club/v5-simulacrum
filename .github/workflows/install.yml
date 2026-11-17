@@ -24,21 +24,6 @@ jobs:
       - name: Platform helpers
         run: bash scripts/platform_test.sh
 
-      - name: xPack toolchain checksum (to pin in setup.sh)
-        run: |
-          case $(uname -s)-$(uname -m) in
-            Darwin-arm64) h=darwin-arm64 ;; Darwin-*) h=darwin-x64 ;; *) h=linux-x64 ;;
-          esac
-          f=xpack-arm-none-eabi-gcc-14.2.1-1.1-$h.tar.gz
-          u=https://github.com/xpack-dev-tools/arm-none-eabi-gcc-xpack/releases/download/v14.2.1-1.1
-          mkdir -p ~/re/dl
-          curl -fsSL --retry 3 -o ~/re/dl/$f "$u/$f"
-          curl -fsSL --retry 3 "$u/$f.sha" || true
-          sum=$( (shasum -a 256 ~/re/dl/$f 2>/dev/null || sha256sum ~/re/dl/$f) | cut -d' ' -f1)
-          echo "XPACK $h $sum"
-          # until setup.sh pins it: use what was downloaded
-          if grep -q "@XPACK_SHA_" scripts/setup.sh; then echo "V5SIM_XPACK_SHA256=$sum" >> "$GITHUB_ENV"; fi
-
       - name: Setup (scripts/setup.sh)
         run: bash scripts/setup.sh
 
@@ -46,21 +31,11 @@ jobs:
         run: |
           cd sim
           if [ "$RUNNER_OS" = macOS ]; then
-            # the real motor firmware's timing on macOS: the next step
+            # --motor-fw is a known limitation on macOS (SIMULATOR.md section 7)
             ~/venvs/sim/bin/python -m pytest -q tests --deselect tests/test_firmware_motor.py
           else
             ~/venvs/sim/bin/python -m pytest -q tests
           fi
-
-      - name: Motor firmware timing on macOS (experiment)
-        if: runner.os == 'macOS'
-        continue-on-error: true
-        run: |
-          cd sim
-          for qargs in "" "-icount shift=auto,sleep=on" "-icount shift=0,sleep=on,align=off"; do
-            echo "=== V5SIM_MOTOR_QEMU_ARGS='$qargs'"
-            V5SIM_MOTOR_QEMU_ARGS="$qargs" ~/venvs/sim/bin/python -m pytest -q tests/test_firmware_motor.py 2>&1 | tail -15 || true
-          done
 
       - name: Build a test program
         run: bash programs/test-programs/build.sh hello
@@ -70,7 +45,7 @@ jobs:
 
       - name: Launcher, brain screen, graceful stop
         run: |
-          out=$(./v5sim start competition programs/test-programs/hello/hello.bin --motor-fw 7)
+          out=$(./v5sim start competition programs/test-programs/hello/hello.bin)
           sleep 2
           echo "$out"
           id=$(echo "$out" | sed -n 's/^Started V5 sim instance \([0-9]*\)\..*/\1/p')

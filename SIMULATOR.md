@@ -311,7 +311,7 @@ Any check or preset can run on it with `V5SIM_ROBOT_EXTRA="--physics mujoco"`. M
 
 **Motors heat up and derate**: past 55 °C a motor's current limit halves every 5 °C, down to nothing at 70 °C, as VEX describes.
 
-**Real motor firmware** (`--motor-fw 7`, or `--motor-fw all`): normally each motor is a Python model of the motor's firmware. With this option the motor on that port runs VEX's own motor firmware (the 11 W or 5.5 W image from VEXos) in a small emulator of its own. Its real velocity and position PID, current limit and faults then drive the physics, so tuning that depends on how the motor's own controller reacts behaves more like a real robot. Each emulated motor is one extra QEMU process using about a third of a CPU core, so a six-motor drive costs about two cores; start-up adds about a second. The 5.5 W firmware caps its drive at 60 % of the battery, as a real 5.5 W motor does. Velocity readings jitter by about 1 %, a little like a real encoder.
+**Real motor firmware** (`--motor-fw 7`, or `--motor-fw all`): normally each motor is a Python model of the motor's firmware. With this option the motor on that port runs VEX's own motor firmware (the 11 W or 5.5 W image from VEXos) in a small emulator of its own. Its real velocity and position PID, current limit and faults then drive the physics, so tuning that depends on how the motor's own controller reacts behaves more like a real robot. Each emulated motor is one extra QEMU process using about a third of a CPU core, so a six-motor drive costs about two cores; start-up adds about a second. The 5.5 W firmware caps its drive at 60 % of the battery, as a real 5.5 W motor does. Velocity readings jitter by about 1 %, a little like a real encoder. Not on macOS: see section 7.
 
 **Battery**: the robot runs off a modelled V5 battery (LiFePO4, 1.1 Ah), so a hard launch sags the voltage and a long run drains it. The brain sees it as a real pack: the header icon and the percent in `vexcom`/PROS status follow it.
 
@@ -452,7 +452,7 @@ A controller alone, with no robot behind it (it reports a robot linked and runni
   - Goals are floor zones, not obstacles.
   - The GPS heading convention is a best guess (0 = facing +y).
 - **Debugging:** v5gdb works with software breakpoints and single-step. GDB hardware breakpoints (`hbreak`) and watchpoints aren't verified. There is no JTAG.
-- **macOS:** no Windows-style USB (VEXcode's Download button), see section 5. With `--motor-fw`, the motor firmware's velocity readings may jitter a little more than on Linux, which can make its timers fire later (Linux's timer-slack setting has no macOS equivalent).
+- **macOS:** no Windows-style USB (VEXcode's Download button), see section 5. **`--motor-fw` doesn't work properly on a Mac**: QEMU on macOS can only sleep in whole milliseconds, and the motor firmware's encoder edges come faster than that, so the firmware counts about half of them and drives its motor about twice as fast as commanded (the sim prints a warning). The default motor model (without `--motor-fw`) is unaffected.
 - **Speed:** the simulator runs close to real time. A busy PC can slow it slightly. While v5gdb single-steps, the program runs one instruction per step and so runs much slower.
 
 ---
