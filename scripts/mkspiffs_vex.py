@@ -117,6 +117,13 @@ def file_meta(vid: int, stored: bytes, addr: int, kind: bytes, timestamp: int,
     return meta.ljust(META_LEN, b"\xFF")
 
 
+def ini_meta(data: bytes, addr: int, timestamp: int, version: int) -> bytes:
+    """The meta VEXos writes for a program's .ini (type "ini", the program's
+    load address). Blank (0xFF) meta made VEXos report type 0xFFFFFFFF to
+    the brain's file listing (ext 0x17), and pros upload crash on it."""
+    return file_meta(VID_USER, data, addr, b"ini\0", timestamp, version)
+
+
 def packed(data: bytes) -> bytes:
     """gzip, as uploads are stored (already-gzip data as it is)."""
     return data if data[:2] == b"\x1f\x8b" else gzip.compress(data, mtime=0)
@@ -251,19 +258,24 @@ def build(specs: list[str]) -> bytes:
     img = Image()
     now = int(time.time())
     libraries: set[str] = set()
+    stamp = now - VEX_EPOCH
     for text in specs:
         spec = parse_spec(text)
         data = spec.path.read_bytes()
         if spec.link is not None:
-            for f in linked_files(spec, data, now):
+            files = linked_files(spec, data, now)
+            for f in files:
                 if f.name.startswith("user/") or f.name not in libraries:
                     img.add(f)
                     libraries.add(f.name)
+            addr = struct.unpack_from("<I", files[-1].meta, 8)[0]
         else:
             if data[:4] != b"XVX5":
                 raise SystemExit(f"{spec.path}: not a V5 user program (no XVX5 header)")
             img.add(SpiffsFile(f"user/{spec.name}.bin", data, program_meta(data, now)))
-        img.add(SpiffsFile(f"user/{spec.name}.ini", program_ini(spec.name, spec.slot, spec.autorun)))
+            addr = USER_LOAD_ADDR
+        ini = program_ini(spec.name, spec.slot, spec.autorun)
+        img.add(SpiffsFile(f"user/{spec.name}.ini", ini, ini_meta(ini, addr, stamp, 1)))
     return bytes(img.buf)
 
 
