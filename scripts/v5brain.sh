@@ -1,12 +1,18 @@
 #!/bin/bash
 # Emulated V5 brain (stock VEXos 1.1.5.0 on QEMU -M vex-v5).
 #
-#   v5brain.sh [--id N|auto] [--run prog.bin] [--slot N] [--robot "ARGS"]
-#              [--headless] [--run-after SECS] [--usb] [-- extra qemu args]
+#   v5brain.sh [--id N|auto] [--run prog.bin|main.py] [--link lib.bin]
+#              [--slot N] [--robot "ARGS"] [--headless] [--run-after SECS]
+#              [--usb] [-- extra qemu args]
 #
 #   --run FILE      install FILE (a V5 user program .bin, 'XVX5' header) in
 #                   the brain's program storage and start it once VEXos is
 #                   up: Programs > slot > Run, the same path a user takes
+#   --link FILE     what --run's program is linked to, as PROS and VEXcode
+#                   upload it: a PROS hot package (--run hot.package.bin)
+#                   with its cold package (--link cold.package.bin), or a
+#                   VEXcode Python program (--run main.py) with VEX's
+#                   MicroPython VM (--link .../vexv5/vm/python_vm.bin)
 #   --slot N        program slot 1..8 for --run (default 1)
 #   --robot "ARGS"  also start the device/physics sim, e.g.
 #                   --robot "--drive 1,2,3:4,5,6:blue --motor 8:green"
@@ -61,11 +67,12 @@ export V5SIM_RUNS=${V5SIM_RUNS:-~/re/qemu-runs}
 RUNS=$V5SIM_RUNS
 MAX_ID=9
 
-run_file="" slot=1 robot_args="" headless=0 run_after=${V5SIM_RUN_AFTER:-0.5} usb=0 id=${V5SIM_ID:-0}
+run_file="" link_file="" slot=1 robot_args="" headless=0 run_after=${V5SIM_RUN_AFTER:-0.5} usb=0 id=${V5SIM_ID:-0}
 while [ $# -gt 0 ]; do
   case $1 in
     --id) id=$2; shift 2 ;;
     --run) run_file=$2; shift 2 ;;
+    --link) link_file=$2; shift 2 ;;
     --slot) slot=$2; shift 2 ;;
     --robot) robot_args=$2; shift 2 ;;
     --headless) headless=1; shift ;;
@@ -73,18 +80,30 @@ while [ $# -gt 0 ]; do
     --usb) usb=1; shift ;;
     --usbip) usb=ip; shift ;;
     --) shift; break ;;
-    -h|--help) sed -n '2,31p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,41p' "$0"; exit 0 ;;
     *) echo "unknown option: $1 (see --help)" >&2; exit 2 ;;
   esac
 done
-if [ -n "$run_file" ]; then
-  [ -f "$run_file" ] || { echo "no such file: $run_file" >&2; exit 2; }
-  case $run_file in *[[:space:]]* | *[*?]*)   # PROGRAMS is a space-separated list
-    echo "--run: the path can't contain spaces or wildcards: $run_file" >&2; exit 2 ;;
+# a path in PROGRAMS: a space-separated list of name=path[@slot][,option]
+program_path() {
+  [ -f "$2" ] || { echo "$1: no such file: $2" >&2; exit 2; }
+  case $2 in *[[:space:]]* | *[*?,]*)
+    echo "$1: the path can't contain spaces, commas or wildcards: $2" >&2; exit 2 ;;
   esac
+}
+[ -z "$link_file" ] || [ -n "$run_file" ] || { echo "--link goes with --run" >&2; exit 2; }
+if [ -n "$run_file" ]; then
+  program_path --run "$run_file"
+  case $run_file in
+    *.py) [ -n "$link_file" ] || { echo "--run main.py needs --link with VEX's python_vm.bin" >&2; exit 2; } ;;
+  esac
+  [ -z "$link_file" ] || program_path --link "$link_file"
   [ "$slot" -ge 1 ] && [ "$slot" -le 8 ] || { echo "--slot must be 1..8" >&2; exit 2; }
-  name=$(basename "$run_file" .bin | tr -c 'A-Za-z0-9_\n' '_' | cut -c1-20)
-  PROGRAMS="${PROGRAMS:-} $name=$run_file@$((slot - 1))"
+  name=$(basename "$run_file" | sed 's/\.[^.]*$//' | tr -c 'A-Za-z0-9_\n' '_' | cut -c1-20)
+  # a hot package is named for its slot, as PROS names it (hot.package is
+  # every PROS project's)
+  case $(basename "$run_file") in hot.package.bin) name=slot_$slot ;; esac
+  PROGRAMS="${PROGRAMS:-} $name=$run_file@$((slot - 1))${link_file:+,link=$link_file}"
 fi
 export PROGRAMS="${PROGRAMS:-}"
 

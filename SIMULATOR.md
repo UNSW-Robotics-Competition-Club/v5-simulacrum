@@ -406,7 +406,8 @@ bash scripts/v5brain.sh \
 
 | option | |
 |---|---|
-| `--run FILE` | install FILE (a V5 `.bin`) and start it after boot |
+| `--run FILE` | install FILE (a V5 `.bin`, or a VEXcode Python `main.py` with `--link`) and start it after boot |
+| `--link FILE` | what `--run` links to, as PROS and VEXcode upload it: a PROS project's `bin/cold.package.bin` with `--run bin/hot.package.bin` (hot/cold), or VEX's MicroPython VM (the VEXcode extension's `sdk/python/V5/V5_*/vexv5/vm/python_vm.bin`) with `--run main.py` |
 | `--slot N` | the slot for `--run` (1-8, default 1) |
 | `--robot "ARGS"` | robot options (section 4); `@robots/NAME.args` pulls in a preset |
 | `--usb` | the USB ports (section 5) |
