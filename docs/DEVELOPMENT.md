@@ -47,6 +47,7 @@ Each end-to-end check boots VEXos, runs a real program and prints what it saw (`
 | `sensors_test`, `aivision_test` | optical + GPS; AI Vision colour signature aim-and-collect |
 | `aitags_test`, `vision_test` | AI Vision AprilTag + colour code; legacy Vision Sensor signature aim |
 | `usb_test`, `vexcom_test` | PROS CLI status/upload/terminal, VEXcode `vexcom` + Python |
+| `hotcold_test`, `python_run_test` | `--run`/`--link`: a PROS hot/cold program (set `V5SIM_HOTCOLD` to a built PROS project), a VEXcode Python program with VEX's VM (from the VEXcode extension's SDK) |
 
 On macOS the same commands work from Terminal. `scripts/qemu_run.sh` (a few low-level checks) uses `timeout`: `brew install coreutils` provides it as `gtimeout`, so link it as `timeout` or skip those.
 
