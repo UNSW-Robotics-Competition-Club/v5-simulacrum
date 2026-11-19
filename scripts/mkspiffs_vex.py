@@ -33,6 +33,7 @@ Usage (writes into an existing QSPI image in place):
 from __future__ import annotations
 
 import gzip
+import re
 import struct
 import sys
 import time
@@ -129,11 +130,13 @@ def packed(data: bytes) -> bytes:
     return data if data[:2] == b"\x1f\x8b" else gzip.compress(data, mtime=0)
 
 
-def header_version(data: bytes) -> int:
+def header_version(data: bytes, what: object = "file") -> int:
     """The version in a program's XVX5 header (bytes 28..31), gzip or not."""
     raw = gzip.decompress(data) if data[:2] == b"\x1f\x8b" else data
     if raw[:4] != b"XVX5":
-        raise SystemExit("not a V5 program image (no XVX5 header)")
+        raise SystemExit(f"{what}: not a V5 program image (no XVX5 header)")
+    if len(raw) < 32:
+        raise SystemExit(f"{what}: too short for a V5 program image ({len(raw)} bytes)")
     return struct.unpack_from("<I", raw, 28)[0]
 
 
@@ -212,7 +215,9 @@ class Spec:
 def parse_spec(spec: str) -> Spec:
     name, _, rest = spec.partition("=")
     rest, *options = rest.split(",")
-    path, _, slot = rest.partition("@")
+    # only a trailing @<digits> is the slot: a path may contain "@"
+    m = re.fullmatch(r"(.*?)(?:@(\d+))?", rest)
+    path, slot = m.group(1), m.group(2)
     autorun, link = False, None
     for opt in options:
         if opt == "autorun":
@@ -232,10 +237,20 @@ def linked_files(spec: Spec, data: bytes, now: int) -> list[SpiffsFile]:
     """A PROS hot package or a VEXcode Python program, and its library."""
     lib = spec.link.read_bytes()
     stamp = now - VEX_EPOCH
+    # both libraries carry an XVX5 header, so a swapped pair would install
+    # without a word and fail on the brain: tell them apart by their names
+    # (PROS writes cold.package.bin, VEX's SDK python_vm.bin)
+    link_name = spec.link.name.lower()
     if spec.path.suffix.lower() == ".py":
-        lib_name, lib_meta_args = "vxvm/python_vm.bin", (VID_VXVM, header_version(lib))
+        if link_name.startswith("cold"):
+            raise SystemExit(f"{spec.link}: a PROS cold package; a Python program (.py) "
+                             "links to VEX's Python VM (python_vm.bin)")
+        lib_name, lib_meta_args = "vxvm/python_vm.bin", (VID_VXVM, header_version(lib, spec.link))
         prog_addr, prog_kind, prog_version = PY_LOAD_ADDR, b"bina", 1
     else:
+        if "python_vm" in link_name:
+            raise SystemExit(f"{spec.link}: VEX's Python VM; only a Python program (.py) links to it, "
+                             "a PROS hot package to its cold package")
         if lib[:4] != b"XVX5" and lib[:2] != b"\x1f\x8b":
             raise SystemExit(f"{spec.link}: not a PROS cold package (no XVX5 header)")
         # named for its contents, so programs built on one cold package

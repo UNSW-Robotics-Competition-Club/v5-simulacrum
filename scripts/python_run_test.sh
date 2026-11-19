@@ -30,6 +30,8 @@ fi
 D=$(mktemp -d /tmp/v5pyrun.XXXXXX)
 cp "$VM" "$D/python_vm.bin"
 cp "$REPO/programs/test-programs/vexcode_python/main.py" "$D/main.py"
+# a run that stops early must not pass on the last test's console
+: > "${CONSOLE_LOG:=$R/console${V5SIM_ID#0}.txt}"
 bash "$REPO/scripts/v5brain.sh" --headless --run "$D/main.py" --link "$D/python_vm.bin" --slot 4 \
   --robot "--drive 1,2,3:4,5,6:blue --status 1" > $R/v5brain.out 2>&1 < /dev/null &
 e2e_started "" 6
