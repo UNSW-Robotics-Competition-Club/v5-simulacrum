@@ -33,11 +33,12 @@ import socket
 import sys
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # -I leaves it out
+from v5sock import Peer, close  # noqa: E402
+
 RETRY_S = 0.5
-SEND_TIMEOUT_S = 1.0
-CHUNK = 4096
 MAX_FRAME = 2048                 # v5gdb's packets never encode larger
-IDLE_FLUSH_S = 0.25              # bytes with no delimiter for this long: plain output
+IDLE_FLUSH_S = 0.5               # bytes with no delimiter for this long: plain output
 PROS_STREAMS = (b"sout", b"serr")
 
 
@@ -112,7 +113,7 @@ class Demux:
             frame = bytes(self.buf[:end])
             del self.buf[:end + 1]
             if frame:
-                out.append(self.packet(frame))
+                out += self.packets(frame)
         if len(self.buf) > MAX_FRAME:              # no delimiter coming: plain output
             out.append(("u", bytes(self.buf)))
             self.buf.clear()
@@ -127,12 +128,21 @@ class Demux:
             return [("u", data)]
         return []
 
+    def reset(self) -> None:
+        """The brain went away: a half-received packet won't be finished."""
+        self.buf.clear()
+
     @staticmethod
-    def packet(frame: bytes) -> tuple[str, bytes]:
-        p = cobs_decode(frame)
-        if p and chr(p[0]) in "dlu":
-            return chr(p[0]), (pros_text(p[1:]) if p[0] == ord("u") else p[1:])
-        return "u", frame                          # not a packet: program output as it is
+    def packets(frame: bytes) -> list[tuple[str, bytes]]:
+        """A frame as packets: one v5gdb packet; or plain output that ran
+        into one (text with no 0x00 printed just before a packet), split
+        where the packet starts; or plain output only."""
+        for start in range(len(frame)):
+            p = cobs_decode(frame[start:])
+            if p and chr(p[0]) in "dlu":
+                packet = (chr(p[0]), pros_text(p[1:]) if p[0] == ord("u") else p[1:])
+                return ([("u", frame[:start])] if start else []) + [packet]
+        return [("u", frame)]                      # not a packet: program output as it is
 
 
 def listen_unix(path: str) -> socket.socket:
@@ -152,27 +162,16 @@ def listen_tcp(port: int) -> socket.socket:
     return s
 
 
-def send(s: socket.socket | None, data: bytes) -> socket.socket | None:
-    if not s:
-        return None
-    try:
-        s.sendall(data)
-        return s
-    except OSError:
-        s.close()
-        return None
-
-
 class Bridge:
     def __init__(self, brain_path: str, downstream_path: str, gdb_port: int):
         self.brain_path, self.downstream_path = brain_path, downstream_path
-        self.down_listener = listen_unix(downstream_path)
-        self.gdb_listener = listen_tcp(gdb_port)
+        self.gdb_listener = listen_tcp(gdb_port)       # first: a taken port fails before anything else
         self.out_listener = listen_tcp(gdb_port + 1)
-        self.brain: socket.socket | None = None
-        self.down: socket.socket | None = None
-        self.gdb: socket.socket | None = None
-        self.outs: list[socket.socket] = []
+        self.down_listener = listen_unix(downstream_path)
+        self.brain: Peer | None = None
+        self.down: Peer | None = None
+        self.gdb: Peer | None = None
+        self.outs: list[Peer] = []
         self.demux = Demux()
         self._next_try = 0.0
 
@@ -186,93 +185,104 @@ class Bridge:
             s.close()
             self._next_try = time.monotonic() + RETRY_S
             return
-        s.settimeout(SEND_TIMEOUT_S)
-        self.brain = s
+        self.brain = Peer(s)
+        self.demux.reset()
 
-    def sockets(self) -> list[socket.socket]:
-        return [s for s in (self.down_listener, self.gdb_listener, self.out_listener,
-                            self.brain, self.down, self.gdb, *self.outs) if s]
+    def peers(self) -> list[Peer]:
+        return [p for p in (self.brain, self.down, self.gdb, *self.outs) if p]
+
+    def readable(self) -> list:
+        return [self.down_listener, self.gdb_listener, self.out_listener, *self.peers()]
+
+    def writable(self) -> list[Peer]:
+        return [p for p in self.peers() if p.wants_write]
 
     def route(self, packets: list[tuple[str, bytes]]) -> None:
         for channel, data in packets:
             if channel == "d":
-                self.gdb = send(self.gdb, data)
+                if self.gdb and not self.gdb.send(data):
+                    self.gdb = None
             elif channel == "l":
                 print(f"[v5gdb] {data.decode(errors='replace').rstrip()}", file=sys.stderr, flush=True)
             else:
-                self.outs = [s for s in (send(o, data) for o in self.outs) if s]
+                self.outs = [o for o in self.outs if o.send(data)]
 
-    def on_ready(self, ready: list[socket.socket], now: float) -> None:
+    def to_brain(self, data: bytes) -> None:
+        if self.brain and not self.brain.send(data):
+            self.brain = None
+
+    def on_ready(self, ready: list, writable: list, now: float) -> None:
+        for p in writable:
+            p.flush()
         if self.down_listener in ready:
-            if self.down:
-                self.down.close()
-            self.down, _ = self.down_listener.accept()
-            self.down.settimeout(SEND_TIMEOUT_S)
+            close(self.down)
+            self.down = Peer(self.down_listener.accept()[0])
         if self.gdb_listener in ready:
-            if self.gdb:
-                self.gdb.close()                     # a new GDB replaces a stale one
-            self.gdb, _ = self.gdb_listener.accept()
-            self.gdb.settimeout(SEND_TIMEOUT_S)
+            close(self.gdb)                              # a new GDB replaces a stale one
+            self.gdb = Peer(self.gdb_listener.accept()[0])
             print("[v5gdb] GDB connected", file=sys.stderr, flush=True)
         if self.out_listener in ready:
-            o, _ = self.out_listener.accept()
-            o.settimeout(SEND_TIMEOUT_S)
-            self.outs.append(o)
+            self.outs.append(Peer(self.out_listener.accept()[0]))
         if self.brain and self.brain in ready:
-            data = recv(self.brain)
-            if not data:
-                self.brain.close()
+            data = self.brain.recv()
+            if data == b"":
+                close(self.brain)
                 self.brain = None
-            else:
-                self.down = send(self.down, data)    # the usual host side sees it unchanged
+            elif data:
+                if self.down and not self.down.send(data):   # the usual host side sees it unchanged
+                    self.down = None
                 self.route(self.demux.feed(data, now))
         if self.gdb and self.gdb in ready:
-            data = recv(self.gdb)
-            if not data:
-                self.gdb.close()
+            data = self.gdb.recv()
+            if data == b"":
+                close(self.gdb)
                 self.gdb = None
                 print("[v5gdb] GDB disconnected", file=sys.stderr, flush=True)
-            elif self.brain:
-                self.brain = send(self.brain, data)
+            elif data:
+                self.to_brain(data)
         if self.down and self.down in ready:
-            data = recv(self.down)
-            if not data:
-                self.down.close()
+            data = self.down.recv()
+            if data == b"":
+                close(self.down)
                 self.down = None
-            elif self.brain and not self.gdb:        # v5gdb would read it as GDB's
-                self.brain = send(self.brain, data)
+            elif data and not self.gdb:                  # v5gdb would read it as GDB's
+                self.to_brain(data)
         for o in [o for o in self.outs if o in ready]:
-            if not recv(o):                          # output only: input is ignored
+            if o.recv() == b"":                          # output only: input is ignored
                 o.close()
-                self.outs.remove(o)
+        self.outs = [o for o in self.outs if o.alive]
         self.route(self.demux.idle(now))
+        for name in ("brain", "down", "gdb"):
+            p = getattr(self, name)
+            if p and not p.alive:
+                setattr(self, name, None)
 
     def close(self) -> None:
-        for s in self.sockets():
+        for p in self.peers():
+            p.close()
+        for s in (self.down_listener, self.gdb_listener, self.out_listener):
             s.close()
         if os.path.lexists(self.downstream_path):
             os.unlink(self.downstream_path)
 
 
-def recv(s: socket.socket) -> bytes:
-    try:
-        return s.recv(CHUNK)
-    except OSError:
-        return b""
-
-
 def main(argv: list[str]) -> None:
-    if len(argv) != 3 or not argv[2].isdigit():
+    if len(argv) != 3 or not argv[2].isdigit() or not 1024 <= int(argv[2]) <= 65534:
         sys.exit(__doc__)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    bridge = Bridge(argv[0], argv[1], int(argv[2]))
+    try:
+        bridge = Bridge(argv[0], argv[1], int(argv[2]))
+    except OSError as e:
+        print(f"[v5gdb] can't serve GDB on ports {argv[2]} and {int(argv[2]) + 1}: {e}. "
+              "Another simulator or program has them: pick others with --gdb PORT.", file=sys.stderr, flush=True)
+        sys.exit(1)
     print(f"[v5gdb] GDB on 127.0.0.1:{argv[2]}, program output on 127.0.0.1:{int(argv[2]) + 1}",
           file=sys.stderr, flush=True)
     try:
         while True:
             bridge.ensure_brain()
-            ready, _, _ = select.select(bridge.sockets(), [], [], IDLE_FLUSH_S / 2)
-            bridge.on_ready(ready, time.monotonic())
+            ready, writable, _ = select.select(bridge.readable(), bridge.writable(), [], IDLE_FLUSH_S / 2)
+            bridge.on_ready(ready, writable, time.monotonic())
     except KeyboardInterrupt:
         pass
     finally:

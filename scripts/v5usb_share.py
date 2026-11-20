@@ -14,7 +14,8 @@ client, and serves two sockets of its own:
 
   python3 scripts/v5usb_share.py /tmp/v5usb-sys.sock /tmp/v5usb-sys-shared.sock /tmp/v5usb-host.sock
 
-Reconnects when QEMU restarts. V5USB_TRACE=FILE logs every chunk.
+Reconnects when QEMU restarts. Sends are buffered (v5sock.py): a slow
+reader never stalls the others. V5USB_TRACE=FILE logs every chunk.
 """
 from __future__ import annotations
 
@@ -25,9 +26,10 @@ import socket
 import sys
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # -I leaves it out
+from v5sock import Peer, close  # noqa: E402
+
 RETRY_S = 0.5
-SEND_TIMEOUT_S = 1.0
-CHUNK = 4096
 TRACE = open(os.environ["V5USB_TRACE"], "a", buffering=1) if os.environ.get("V5USB_TRACE") else None
 T0 = time.monotonic()
 
@@ -51,9 +53,9 @@ class Share:
         self.brain_path, self.paths = brain_path, (shared_path, host_path)
         self.shared_listener = listen(shared_path)
         self.host_listener = listen(host_path)
-        self.brain: socket.socket | None = None
-        self.shared: socket.socket | None = None
-        self.host: socket.socket | None = None
+        self.brain: Peer | None = None
+        self.shared: Peer | None = None
+        self.host: Peer | None = None
         self._next_try = 0.0
 
     def ensure_brain(self) -> None:
@@ -66,86 +68,76 @@ class Share:
             s.close()
             self._next_try = time.monotonic() + RETRY_S
             return
-        s.settimeout(SEND_TIMEOUT_S)
-        self.brain = s
+        self.brain = Peer(s)
         print(f"share: {self.brain_path} connected", flush=True)
 
-    def sockets(self) -> list[socket.socket]:
-        return [s for s in (self.shared_listener, self.host_listener, self.brain, self.shared, self.host) if s]
+    def peers(self) -> list[Peer]:
+        return [p for p in (self.brain, self.shared, self.host) if p]
 
-    def accept(self, listener: socket.socket) -> socket.socket:
-        conn, _ = listener.accept()
-        conn.settimeout(SEND_TIMEOUT_S)
-        return conn
+    def readable(self) -> list:
+        return [self.shared_listener, self.host_listener, *self.peers()]
 
-    def on_ready(self, ready: list[socket.socket]) -> None:
+    def writable(self) -> list[Peer]:
+        return [p for p in self.peers() if p.wants_write]
+
+    def to_brain(self, data: bytes) -> None:
+        if self.brain and not self.brain.send(data):
+            self.brain = None
+            print("share: brain gone, waiting", flush=True)
+
+    def on_ready(self, ready: list, writable: list) -> None:
+        for p in writable:
+            p.flush()
         if self.shared_listener in ready:
             close(self.shared)
-            self.shared = self.accept(self.shared_listener)
+            self.shared = Peer(self.shared_listener.accept()[0])
         if self.host_listener in ready:
             close(self.host)                     # a new uploader replaces a stale one
-            self.host = self.accept(self.host_listener)
+            self.host = Peer(self.host_listener.accept()[0])
             print("share: uploader connected", flush=True)
         if self.brain and self.brain in ready:
-            data = recv(self.brain)
-            if not data:
+            data = self.brain.recv()
+            if data == b"":
                 close(self.brain)
                 self.brain = None
                 print("share: brain gone, waiting", flush=True)
-            else:
+            elif data:
                 trace("<brain", data)
-                self.host = send(self.host, data) if self.host else self.host
-                if not self.host and self.shared:
-                    self.shared = send(self.shared, data)
+                if self.host:                     # the uploader's reply, even if it just left
+                    if not self.host.send(data):
+                        self.host = None
+                elif self.shared and not self.shared.send(data):
+                    self.shared = None
         if self.shared and self.shared in ready:
-            data = recv(self.shared)
-            if not data:
+            data = self.shared.recv()
+            if data == b"":
                 close(self.shared)
                 self.shared = None
-            elif not self.host and self.brain:   # dropped while an upload has the port
+            elif data and not self.host:          # dropped while an upload has the port
                 trace("shared>", data)
-                self.brain = send(self.brain, data)
+                self.to_brain(data)
         if self.host and self.host in ready:
-            data = recv(self.host)
-            if not data:
+            data = self.host.recv()
+            if data == b"":
                 close(self.host)
                 self.host = None
                 print("share: uploader done", flush=True)
-            elif self.brain:
+            elif data:
                 trace("host>", data)
-                self.brain = send(self.brain, data)
+                self.to_brain(data)
+        for name in ("brain", "shared", "host"):
+            p = getattr(self, name)
+            if p and not p.alive:
+                setattr(self, name, None)
 
     def close(self) -> None:
-        for s in (self.brain, self.shared, self.host, self.shared_listener, self.host_listener):
-            close(s)
+        for p in self.peers():
+            p.close()
+        for s in (self.shared_listener, self.host_listener):
+            s.close()
         for p in self.paths:
             if os.path.lexists(p):
                 os.unlink(p)
-
-
-def recv(s: socket.socket) -> bytes:
-    try:
-        return s.recv(CHUNK)
-    except OSError:
-        return b""
-
-
-def send(s: socket.socket, data: bytes) -> socket.socket | None:
-    """Sends all of data; a peer that can't take it is dropped (None)."""
-    try:
-        s.sendall(data)
-        return s
-    except OSError:
-        close(s)
-        return None
-
-
-def close(s: socket.socket | None) -> None:
-    if s:
-        try:
-            s.close()
-        except OSError:
-            pass
 
 
 def main(argv: list[str]) -> None:
@@ -156,8 +148,8 @@ def main(argv: list[str]) -> None:
     try:
         while True:
             share.ensure_brain()
-            ready, _, _ = select.select(share.sockets(), [], [], RETRY_S)
-            share.on_ready(ready)
+            ready, writable, _ = select.select(share.readable(), share.writable(), [], RETRY_S)
+            share.on_ready(ready, writable)
     except KeyboardInterrupt:
         pass
     finally:

@@ -36,7 +36,7 @@
 #   --gdb PORT|auto debug a v5gdb program (vexide or PROS) from GDB:
 #                   scripts/v5gdb_bridge.py serves GDB on 127.0.0.1:PORT
 #                   (target remote :PORT) and the program's output as text
-#                   on PORT+1; auto = 35537+N. The user port's usual host
+#                   on PORT+1; auto = 35537+2N. The user port's usual host
 #                   side (--usb, --usbip) still sees its bytes unchanged
 #   --id N|auto     which simulator instance (env V5SIM_ID; default 0), so
 #                   several can run at once. 0 uses the paths below; N >= 1
@@ -77,7 +77,7 @@ gdb_port=""
 while [ $# -gt 0 ]; do
   case $1 in
     --id) id=$2; shift 2 ;;
-    --gdb) gdb_port=$2; shift 2 ;;
+    --gdb) gdb_port=${2:-}; [ -n "$gdb_port" ] || { echo "--gdb needs a port or auto" >&2; exit 2; }; shift 2 ;;
     --run) run_file=$2; shift 2 ;;
     --link) link_file=$2; shift 2 ;;
     --slot) slot=$2; shift 2 ;;
@@ -269,8 +269,13 @@ helpers+=($!)
 # output on TCP, and passes the port on to its usual host side unchanged
 USER_SOCK=$T/v5usb-user.sock
 if [ -n "$gdb_port" ]; then
-  [ "$gdb_port" = auto ] && gdb_port=$((35537 + id))
+  # two ports each (GDB, output): instance N gets 35537+2N, 35538+2N
+  [ "$gdb_port" = auto ] && gdb_port=$((35537 + 2 * id))
   case $gdb_port in ''|*[!0-9]*) echo "--gdb must be a port number or auto" >&2; exit 2 ;; esac
+  { [ "$gdb_port" -ge 1024 ] && [ "$gdb_port" -le 65534 ]; } || { echo "--gdb port must be 1024..65534" >&2; exit 2; }
+  for p in "$gdb_port" $((gdb_port + 1)); do
+    tcp_listening "$p" && { echo "--gdb: port $p is taken (another simulator debugging?): pick another with --gdb PORT" >&2; exit 2; }
+  done
   rm -f $T/v5usb-user-out.sock
   python3 -I "$REPO/scripts/v5gdb_bridge.py" $T/v5usb-user.sock $T/v5usb-user-out.sock "$gdb_port" >&2 &
   helpers+=($!)

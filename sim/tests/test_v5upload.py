@@ -32,12 +32,13 @@ class FakeBrain:
 
     MAX_PACKET = 0x1000
 
-    def __init__(self, have: dict | None = None, drop_first: set[int] | None = None):
+    def __init__(self, have: dict | None = None, drop_first: set[int] | None = None, mute_first: set[int] | None = None):
         self.buf = bytearray()
         self.out = bytearray()
         self.files: dict[tuple[int, str], dict] = dict(have or {})
         self.commands: list[int] = []
         self.drop_first = set(drop_first or ())        # commands whose first packet is "lost"
+        self.mute_first = set(mute_first or ())        # handled, but the reply is "late" (never comes)
         self.current: dict | None = None
 
     # the Port interface Brain uses
@@ -69,7 +70,11 @@ class FakeBrain:
             self.drop_first.discard(cmd)
             return True
         self.commands.append(cmd)
-        self.out += reply(cmd, self.handle(cmd, frame[hdr:hdr + n]))
+        answer = reply(cmd, self.handle(cmd, frame[hdr:hdr + n]))
+        if cmd in self.mute_first:
+            self.mute_first.discard(cmd)
+        else:
+            self.out += answer
         return True
 
     def handle(self, cmd: int, p: bytes) -> bytes:
@@ -181,12 +186,43 @@ def test_wrong_pairs_and_non_programs_are_refused(tmp_path):
         up.plan(tmp_path / "x.bin", tmp_path / "python_vm.bin", 1, "x", "run")
 
 
-def test_a_lost_packet_is_sent_again(tmp_path):
+def test_a_lost_start_is_sent_again_but_a_lost_write_fails(tmp_path):
     prog = tmp_path / "p.bin"
     prog.write_bytes(XVX5 + bytes(100))
-    brain = FakeBrain(drop_first={up.FT_WRITE})
+    brain = FakeBrain(drop_first={up.FT_INIT})        # VEXos still starting
     up.upload(up.Brain(brain, timeout=0.05), up.plan(prog, None, 1, "p", "none"))
     assert (up.VID_USER, "slot_1.bin") in brain.files
+    # a write sent twice would land at the wrong place: fail instead
+    with pytest.raises(up.UploadError, match="no reply"):
+        up.upload(up.Brain(FakeBrain(drop_first={up.FT_WRITE}), timeout=0.05), up.plan(prog, None, 1, "p", "none"))
+
+
+def test_a_late_end_of_transfer_counts_when_the_brain_has_the_file(tmp_path, monkeypatch):
+    prog = tmp_path / "p.bin"
+    prog.write_bytes(XVX5 + bytes(100))
+    monkeypatch.setattr(up, "COMPLETE_MIN_S", 0.05)               # COMPLETE's wait, shortened
+    brain = FakeBrain(mute_first={up.FT_COMPLETE})
+    up.upload(up.Brain(brain, timeout=0.05), up.plan(prog, None, 1, "p", "run"))
+    # the first end (the ini's) got no reply: it wasn't sent again, the
+    # brain's copy was checked instead, and the upload went on
+    assert brain.commands.count(up.FT_COMPLETE) == 2              # the ini's, the program's
+    first = brain.commands.index(up.FT_COMPLETE)
+    assert brain.commands[first + 1] == up.FT_META_BY_NAME
+    assert {(up.VID_USER, "slot_1.ini"), (up.VID_USER, "slot_1.bin")} <= set(brain.files)
+
+
+def test_names_the_brain_cant_take_are_refused():
+    with pytest.raises(up.UploadError, match="ASCII"):
+        up.remote_name("prögram.bin")
+    with pytest.raises(up.UploadError, match="too long"):
+        up.remote_name("x" * 25)
+    assert up.remote_name("slot_1.bin") == b"slot_1.bin"
+
+
+def test_a_corrupt_length_does_not_swallow_the_real_reply():
+    real = reply(0x13, b"\x76")
+    fake = bytearray(up.REPLY + bytes([up.EXT, 0x40]))          # claims 64 bytes, then the real reply
+    assert up.parse_reply(bytearray(fake + real + bytes(70)), 0x13) == b""
 
 
 def test_share_gives_an_uploader_the_port_to_itself(sock_dir):

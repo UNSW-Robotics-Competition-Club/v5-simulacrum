@@ -133,3 +133,16 @@ def connect_tcp(port: int) -> socket.socket:
         except OSError:
             time.sleep(0.1)
     raise AssertionError(f"nothing on {port}")
+
+
+def test_plain_text_that_runs_into_a_packet_keeps_the_packet():
+    d = vb.Demux()
+    got = d.feed(b"printed without a newline" + packet("d", b"$T05#b9"), 0)
+    assert got == [("u", b"printed without a newline"), ("d", b"$T05#b9")]
+
+
+def test_a_half_packet_is_forgotten_when_the_brain_reconnects():
+    d = vb.Demux()
+    d.feed(packet("d", b"$OK#9a")[:3], 0)
+    d.reset()
+    assert d.feed(packet("l", b"hello"), 1) == [("l", b"hello")]

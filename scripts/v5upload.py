@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Upload a program to a running sim brain over its USB system port and
 start it: Run on Sim without restarting QEMU. Speaks VEXos's CDC2 file
-transfer (notes/usb-protocol.md 7) as PROS and vexcom do, and stores what
---run installs (mkspiffs_vex.py), so both routes leave the same files:
+transfer (notes/usb-protocol.md 7) as PROS and vexcom do, and lays the files
+out as --run does (mkspiffs_vex.py: the same addresses, types, versions and
+libraries), named per slot as PROS names them, so a slot holds one program:
 
   prog.bin                   user/slot_N.bin at 0x03800000
   hot.package.bin --link cold.package.bin
@@ -19,17 +20,20 @@ plus user/slot_N.ini. Programs are sent gzip-compressed, as uploads are.
 
 SOCK is v5usb_share.py's host socket (v5brain.sh prints it as "upload ...")
 or any unix socket / tty that is the brain's system port. Progress goes to
-stdout as "upload NAME DONE/TOTAL" lines.
+stdout as "upload NAME DONE/TOTAL" lines. Exit status 3: nothing answers
+at SOCK (no simulator, or one from before the upload socket).
 """
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import select
 import socket
 import struct
 import sys
 import time
+import tty
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,6 +53,9 @@ PROGRAM_VERSION = 0x01000000          # as PROS writes it
 NAME_LEN = 24
 TIMEOUT_S = 2.0
 RETRIES = 3
+EXIT_NO_PORT = 3
+COMPLETE_MIN_S = 10.0             # a transfer's end: VEXos checks it and writes flash
+COMPLETE_BYTES_PER_S = 20_000
 NACKS = {0xFF: "general NACK", 0xCE: "CRC error", 0xD0: "payload too small", 0xD1: "transfer size too large",
          0xD2: "program CRC error", 0xD3: "program file error", 0xD4: "uninitialized transfer",
          0xD5: "initialization invalid", 0xD6: "data not a multiple of 4 bytes", 0xD7: "packet address mismatch",
@@ -91,6 +98,8 @@ class Port:
         else:
             self.sock = None
             self.fd = os.open(path, os.O_RDWR | os.O_NOCTTY)
+            if os.isatty(self.fd):
+                tty.setraw(self.fd)                    # binary: no echo, no line editing
         self.buf = bytearray()
 
     def write(self, data: bytes) -> None:
@@ -142,9 +151,12 @@ def parse_reply(buf: bytearray, cmd: int) -> bytes | None:
         if len(buf) < hdr + n:
             return None
         frame = bytes(buf[:hdr + n])
-        del buf[:hdr + n]
         if crc16(frame) != 0 or n < 3:
-            continue                                   # corrupt: look for the next
+            # corrupt (or a false header inside other bytes): skip just the
+            # header, so a real reply its length ran over is still found
+            del buf[:2]
+            continue
+        del buf[:hdr + n]
         ext, payload = frame[hdr], frame[hdr + 1:-2]
         if ext != cmd:
             continue
@@ -158,11 +170,13 @@ class Brain:
     def __init__(self, port: Port, timeout: float = TIMEOUT_S):
         self.port, self.timeout = port, timeout
 
-    def ext(self, cmd: int, payload: bytes, timeout: float | None = None) -> bytes:
-        """Sends an ext command and returns its reply (after the ACK),
-        resending on a timeout."""
+    def ext(self, cmd: int, payload: bytes, timeout: float | None = None, retries: int = 1) -> bytes:
+        """Sends an ext command and returns its reply (after the ACK).
+        Resends on a timeout only when retries > 1: for commands that are
+        safe to repeat (a lookup, starting a transfer over). A write or a
+        transfer's end sent twice would land on a transfer that moved on."""
         wait = timeout or self.timeout
-        for _ in range(RETRIES):
+        for _ in range(retries):
             self.port.drain()
             self.port.write(ext_packet(cmd, payload))
             end = time.monotonic() + wait
@@ -171,12 +185,12 @@ class Brain:
                 reply = parse_reply(self.port.buf, cmd)
                 if reply is not None:
                     return reply
-        raise UploadError(f"no reply from the brain to command {cmd:#04x} (is the simulator running?)")
+        raise UploadError(f"no reply from the brain to command {cmd:#04x} (is VEXos still starting?)")
 
     def file_meta(self, name: str, vid: int) -> tuple[int, int] | None:
         """(size, crc) of a file on the brain, or None when it isn't there."""
         try:
-            r = self.ext(FT_META_BY_NAME, struct.pack("<2B24s", vid, 0, name.encode()))
+            r = self.ext(FT_META_BY_NAME, struct.pack("<2B24s", vid, 0, remote_name(name)), retries=RETRIES)
         except UploadError as e:
             if "refused" in str(e):
                 return None
@@ -188,24 +202,43 @@ class Brain:
 
     def write_file(self, name: str, data: bytes, *, vid: int, addr: int, kind: bytes, version: int,
                    link: tuple[str, int] | None = None, after: int = 0, progress=None) -> None:
-        if len(name) > NAME_LEN:
-            raise UploadError(f"name too long for the brain: {name}")
         stamp = int(time.time()) - VEX_EPOCH
+        crc = crc32_v5(data)
         init = struct.pack("<4B3I4s2I24s", FUNCTION_UPLOAD, TARGET_FLASH, vid, OPT_OVERWRITE, len(data), addr,
-                           crc32_v5(data), kind.ljust(4, b"\0")[:4], stamp, version, name.encode())
-        r = self.ext(FT_INIT, init, timeout=self.timeout * 5)
+                           crc, kind.ljust(4, b"\0")[:4], stamp, version, remote_name(name))
+        # VEXos may still be starting: give it time, and start over if needed
+        r = self.ext(FT_INIT, init, timeout=self.timeout * 5, retries=RETRIES)
+        if len(r) < 2:
+            raise UploadError(f"the brain's reply to starting {name} is too short")
         max_packet = struct.unpack_from("<H", r)[0]
         if link:
-            self.ext(FT_SET_LINK, struct.pack("<2B24s", link[1], 0, link[0].encode()))
+            self.ext(FT_SET_LINK, struct.pack("<2B24s", link[1], 0, remote_name(link[0])))
         chunk = max(4, (max_packet // 2) & ~3)                 # as PROS: half the brain's maximum
         for i in range(0, len(data), chunk):
             part = data[i:i + chunk]
             part += bytes(-len(part) % 4)
-            self.ext(FT_WRITE, struct.pack("<I", addr + i) + part)
+            self.ext(FT_WRITE, struct.pack("<I", addr + i) + part, timeout=self.timeout * 2)
             if progress:
                 progress(name, min(i + chunk, len(data)), len(data))
-        # writing to flash takes longer for bigger files
-        self.ext(FT_COMPLETE, bytes([after]), timeout=max(self.timeout, len(data) / 50_000))
+        # writing to flash takes longer for bigger files; if the reply is
+        # late, the file the brain now has says whether it worked (sending
+        # the end again would hit a finished transfer, or run it twice)
+        try:
+            self.ext(FT_COMPLETE, bytes([after]), timeout=max(COMPLETE_MIN_S, len(data) / COMPLETE_BYTES_PER_S))
+        except UploadError as e:
+            if "no reply" not in str(e) or self.file_meta(name, vid) != (len(data), crc):
+                raise
+
+
+def remote_name(name: str) -> bytes:
+    """A file name as the brain takes it: ASCII, at most 24 bytes."""
+    try:
+        raw = name.encode("ascii")
+    except UnicodeEncodeError:
+        raise UploadError(f"the brain only takes ASCII file names: {name}") from None
+    if len(raw) > NAME_LEN:
+        raise UploadError(f"name too long for the brain (24 characters): {name}")
+    return raw
 
 
 @dataclass(frozen=True)
@@ -276,21 +309,31 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--name", help="the program's name on the brain (default: the file's)")
     ap.add_argument("--after", choices=AFTER, default="run")
     a = ap.parse_args(argv)
-    name = a.name or ("slot_%d" % a.slot if a.program.name == "hot.package.bin" else a.program.stem)[:20]
+    # the name the brain's screen shows (as v5brain.sh names a --run program)
+    name = a.name or ("slot_%d" % a.slot if a.program.name == "hot.package.bin" else a.program.stem)
+    name = re.sub(r"[^A-Za-z0-9_]", "_", name)[:20]
 
     def progress(remote: str, done: int, total: int) -> None:
         print(f"upload {remote} {done}/{total}", flush=True)
 
     try:
         up = plan(a.program, a.link, a.slot, name, a.after)
-        port = Port(a.port)
-        try:
-            written = upload(Brain(port), up, progress)
-        finally:
-            port.close()
     except (UploadError, OSError) as e:
         print(f"v5upload: {e}", file=sys.stderr)
         return 1
+    try:
+        port = Port(a.port)
+    except OSError as e:
+        # nothing listening (no simulator, or one from before the upload socket)
+        print(f"v5upload: can't reach the brain's port {a.port}: {e}", file=sys.stderr)
+        return EXIT_NO_PORT
+    try:
+        written = upload(Brain(port), up, progress)
+    except (UploadError, OSError, struct.error) as e:
+        print(f"v5upload: {e}", file=sys.stderr)
+        return 1
+    finally:
+        port.close()
     print(f"uploaded {', '.join(written)} to slot {a.slot}" + (", running it" if a.after == "run" else ""), flush=True)
     return 0
 
