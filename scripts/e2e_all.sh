@@ -16,7 +16,7 @@ if [ -z "${V5SIM_ID:-}" ]; then
 fi
 [ -n "${V5SIM_ID:-}" ] || { echo "no free simulator instance" >&2; exit 1; }
 echo "e2e checks on simulator instance $V5SIM_ID"
-ALL="smoke_run ui_test button_test arm_test motor55_test motor_fw_test misc_test adi_extra_test vexcode_test imu_test driver_test comp_test radio_test adi_test intake_test opponent_test sensors_test aivision_test aitags_test vision_test usb_test vexcom_test hotcold_test python_run_test"
+ALL="smoke_run ui_test button_test arm_test motor55_test motor_fw_test misc_test adi_extra_test vexcode_test imu_test driver_test comp_test radio_test adi_test intake_test opponent_test sensors_test aivision_test aitags_test vision_test usb_test vexcom_test hotcold_test python_run_test live_upload_test"
 # Keep a USB byte trace of the whole run (intermittent user-port oddities)
 export V5USB_TRACE=${V5USB_TRACE:-/tmp/v5usb_e2e_trace.txt}
 rm -f "$V5USB_TRACE"
