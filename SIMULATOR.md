@@ -374,21 +374,33 @@ The VEXcode IDE's Download button needs the brain on Windows' USB: see "On Windo
 `./v5sim` exposes the brain's USB as the same two serial ports, `/tmp/ttyV5sys` and `/tmp/ttyV5user` (`/tmp/v5simN/...` for instance N). macOS can't plug a virtual USB device in, so **VEXcode's Download button doesn't see the sim**. Get programs onto it one of these ways:
 
 - **As you start it:** `./v5sim competition build/prog.bin` installs the program in slot 1 and runs it. This works for VEXcode C++ builds and any single-file `.bin`.
-- **From VS Code:** the extension's **V5 Sim: Run Program on Sim** does the same for a running sim, and in a PROS project it runs `pros upload` to the sim's port for you.
+- **On a running sim:** `scripts/v5upload.py` through its upload socket (below). The VS Code extension's **V5 Sim: Run Program on Sim** does this for you, and in a PROS project can run `pros upload` to the sim's port instead.
 - **PROS CLI** (`pip install pros-cli`, or the PROS VS Code extension's CLI), with the port given, as in WSL above: `pros upload --slot 2 --after run . /tmp/ttyV5sys`, `pros terminal /tmp/ttyV5user`.
 - **VEXcode's uploader**: the VEXcode VS Code extension downloads a `vexcom` for each platform under `~/Library/Application Support/Code/User/globalStorage/vexrobotics.vexcode/tools/vexcom/<version>/` (build a project once first); use the macOS one. Use it like the WSL one above, port last: `vexcom --slot 2 --write build/prog.bin --run /tmp/ttyV5sys`.
 
 Program output: `pros terminal /tmp/ttyV5user`, or `screen /tmp/ttyV5user` (Ctrl-A K quits).
 
+### Installing a program on a running sim (no restart)
+
+Every start shares the brain's system port: its usual host side (`--usb`, `--usbip`) connects through `scripts/v5usb_share.py`, which also serves an upload socket, printed on the instance line as `upload /tmp/v5usb-host.sock` (`/tmp/v5simN/...` for instance N). `scripts/v5upload.py` installs a program through it and starts it, with or without a USB host side, so on a Mac or on Windows without usbip-win2 too:
+
+```sh
+python3 scripts/v5upload.py /tmp/v5usb-host.sock build/prog.bin --slot 2
+python3 scripts/v5upload.py /tmp/v5usb-host.sock bin/hot.package.bin --link bin/cold.package.bin   # PROS hot/cold
+python3 scripts/v5upload.py /tmp/v5usb-host.sock src/main.py --link .../python_vm.bin              # VEXcode Python
+```
+
+It speaks VEXos's file transfer as PROS and vexcom do (`--after run|screen|none`, default run), skips a PROS cold package or Python VM the brain already has, and takes about half a second for a small program. While an upload runs it has the port to itself. The VS Code extension's **Run on Sim** uses it. `scripts/live_upload_test.sh` checks it end to end.
+
 ### Debugging with GDB (vexide/v5gdb)
 
-The sim models the Cortex-A9 debug hardware that [v5gdb](https://github.com/vexide/v5gdb) uses: a debugger built into a vexide (Rust) program that serves GDB over the brain's User port. Attach, software breakpoints (they fire again on each `continue`), `stepi`, Ctrl-C into a running program, registers, memory, backtraces and `detach` all work as on a real brain.
+The sim models the Cortex-A9 debug hardware that [v5gdb](https://github.com/vexide/v5gdb) uses: a debugger built into a vexide (Rust) or PROS program that serves GDB over the brain's User port. Attach, software breakpoints (they fire again on each `continue`), `stepi`, Ctrl-C into a running program, registers, memory, backtraces and `detach` all work as on a real brain.
 
-1. Build the program with v5gdb. vexide emits the V5 header, so `arm-none-eabi-objcopy -O binary` turns the ELF into a `.bin`. Keep the ELF: GDB reads its symbols from it.
-2. Run it: `V5Sim <preset> program.bin`.
-3. Connect v5gdb's host CLI to the User port. It sends GDB's bytes in and splits the brain's replies (COBS frames tagged `u` user output, `d` GDB, `l` log) out to `arm-none-eabi-gdb` on TCP 35537.
+1. Build the program with v5gdb (vexide 0.9.0-alpha.1 or later, or PROS kernel 4.2.3 or later). vexide emits the V5 header, so `arm-none-eabi-objcopy -O binary` turns the ELF into a `.bin` (`cargo v5 build` does it). Keep the ELF: GDB reads its symbols from it.
+2. Run it with the debugger bridge: `bash scripts/v5brain.sh --gdb auto --run program.bin ...`. `scripts/v5gdb_bridge.py` takes the User port and does the v5gdb CLI's job: it splits the brain's COBS packets (`d` GDB, `l` log, `u` program output), serves GDB on `127.0.0.1:PORT` and the program's output as text on `PORT+1`, and passes the port on unchanged to `--usb` or `--usbip`. `auto` is 35537+2N for instance N; the instance line says `GDB localhost:PORT`. WSL2 forwards both ports to Windows.
+3. Connect GDB: `arm-none-eabi-gdb program.elf -ex "target remote :35537"` (for PROS hot/cold, `bin/hot.package.elf`, then `add-symbol-file bin/cold.package.elf`). v5gdb's VS Code recipe adds `mem 0x100000 0x2c00000 ro cache`, `mem 0x2c00000 0x8000000 rw cache` and `set dcache line-size 1024`. The VS Code extension's **Debug on Sim** does all of this.
 
-On the WSL pty bridge (`/tmp/ttyV5user`), GDB was tested through a small serial↔TCP bridge that does the CLI's job. It isn't in the repo yet. The CLI itself finds the brain by its USB IDs, so it needs the brain on Windows USB (usbip-win2). That route should work like a real brain but hasn't been tested yet.
+The bridge is checked with recorded packets (`sim/tests/test_v5gdb_bridge.py`) and on a running sim; a full GDB session against a v5gdb build through it is still to be checked. Without `--gdb`, v5gdb's own CLI also works when the brain is on Windows USB (usbip-win2), since it finds the brain by its USB IDs.
 
 GDB hardware breakpoints (`hbreak`) may be refused. Plain `break` uses software breakpoints in RAM, and those work. The debug support is QEMU patch `qemu-vex/patches/0006-a9-debug-rom-mmio.patch`. A clone set up before it was added needs a QEMU rebuild: `bash scripts/qemu_install_vex.sh` in WSL.
 
@@ -411,6 +423,7 @@ bash scripts/v5brain.sh \
 | `--slot N` | the slot for `--run` (1-8, default 1) |
 | `--robot "ARGS"` | robot options (section 4); `@robots/NAME.args` pulls in a preset |
 | `--usb` | the USB ports (section 5) |
+| `--gdb PORT\|auto` | the GDB bridge for v5gdb programs (section 5): GDB on PORT, program output on PORT+1; auto = 35537+2N |
 | `--headless` | no window. Take screenshots with `python3 scripts/v5ctl.py /tmp/v5qmp.sock shot:file.ppm`, and convert them with `scripts/ppm2png.py` |
 | `--run-after S` | seconds to wait before tapping Programs > slot > Run (default 0.5; env `V5SIM_RUN_AFTER`). The taps wait for the Home screen and for each screen they open, so a short value is safe |
 
