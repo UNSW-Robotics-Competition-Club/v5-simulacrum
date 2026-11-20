@@ -252,9 +252,15 @@ fi
 USBIP_PORT=$(( ${V5SIM_USBIP_BASE:-3300} + id ))
 USBIP_EXE="/mnt/c/Program Files/USBip/usbip.exe"
 usbip_vport=""                     # the Windows port it attached to, for detach
+# The system port is shared: its usual host side (--usbip, --usb) connects to
+# v5usb-sys-shared.sock, and v5upload.py to v5usb-host.sock to install and run
+# a program without a restart (Run on Sim); an upload has the port to itself.
+rm -f $T/v5usb-sys-shared.sock $T/v5usb-host.sock
+python3 -I "$REPO/scripts/v5usb_share.py" $T/v5usb-sys.sock $T/v5usb-sys-shared.sock $T/v5usb-host.sock >&2 &
+helpers+=($!)
 if [ "$usb" = ip ]; then
-  (wait_for_sock $T/v5usb-sys.sock &&
-   exec python3 -I "$REPO/scripts/v5usb_usbip.py" $T/v5usb-sys.sock $T/v5usb-user.sock \
+  (wait_for_sock $T/v5usb-sys-shared.sock &&
+   exec python3 -I "$REPO/scripts/v5usb_usbip.py" $T/v5usb-sys-shared.sock $T/v5usb-user.sock \
      --port $USBIP_PORT --serial V5SIM$id >&2) &
   helpers+=($!)
   if [ -x "$USBIP_EXE" ]; then
@@ -272,9 +278,9 @@ if [ "$usb" = ip ]; then
   fi
 fi
 if [ "$usb" = 1 ]; then
-  (wait_for_sock $T/v5usb-sys.sock &&
+  (wait_for_sock $T/v5usb-sys-shared.sock &&
    exec python3 -I "$REPO/scripts/v5usb_pty.py" \
-     $T/v5usb-sys.sock=$T/ttyV5sys $T/v5usb-user.sock=$T/ttyV5user >&2) &
+     $T/v5usb-sys-shared.sock=$T/ttyV5sys $T/v5usb-user.sock=$T/ttyV5user >&2) &
   helpers+=($!)
 fi
 if [ -n "$run_file" ]; then
@@ -288,6 +294,7 @@ info="instance $id: QMP $QMP, log $CONSOLE_LOG"
 [ -n "$robot_args" ] && info="$info, field view http://localhost:$VIEW/, brain screen http://localhost:$VIEW/screen"
 [ "$usb" = 1 ] && info="$info, USB $T/ttyV5sys $T/ttyV5user"
 [ "$usb" = ip ] && info="$info, USB/IP localhost:$USBIP_PORT busid 1-1"
+info="$info, upload $T/v5usb-host.sock"
 echo "[v5brain] $info" >&2
 # The brain's serial console goes to stdio (this window, if any) and is also
 # logged to $CONSOLE_LOG so `v5sim log` can follow it live without a window.
