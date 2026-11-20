@@ -33,6 +33,11 @@
 #                   real COM ports that VEXcode and PROS find as a V5 brain.
 #                   With usbip-win2 installed this script attaches it (and
 #                   detaches it on exit) by running Windows' usbip.exe
+#   --gdb PORT|auto debug a v5gdb program (vexide or PROS) from GDB:
+#                   scripts/v5gdb_bridge.py serves GDB on 127.0.0.1:PORT
+#                   (target remote :PORT) and the program's output as text
+#                   on PORT+1; auto = 35537+N. The user port's usual host
+#                   side (--usb, --usbip) still sees its bytes unchanged
 #   --id N|auto     which simulator instance (env V5SIM_ID; default 0), so
 #                   several can run at once. 0 uses the paths below; N >= 1
 #                   puts every socket and tty in /tmp/v5sim<N>/, the field
@@ -68,9 +73,11 @@ RUNS=$V5SIM_RUNS
 MAX_ID=9
 
 run_file="" link_file="" slot=1 robot_args="" headless=0 run_after=${V5SIM_RUN_AFTER:-0.5} usb=0 id=${V5SIM_ID:-0}
+gdb_port=""
 while [ $# -gt 0 ]; do
   case $1 in
     --id) id=$2; shift 2 ;;
+    --gdb) gdb_port=$2; shift 2 ;;
     --run) run_file=$2; shift 2 ;;
     --link) link_file=$2; shift 2 ;;
     --slot) slot=$2; shift 2 ;;
@@ -80,7 +87,7 @@ while [ $# -gt 0 ]; do
     --usb) usb=1; shift ;;
     --usbip) usb=ip; shift ;;
     --) shift; break ;;
-    -h|--help) sed -n '2,41p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,46p' "$0"; exit 0 ;;
     *) echo "unknown option: $1 (see --help)" >&2; exit 2 ;;
   esac
 done
@@ -258,9 +265,20 @@ usbip_vport=""                     # the Windows port it attached to, for detach
 rm -f $T/v5usb-sys-shared.sock $T/v5usb-host.sock
 python3 -I "$REPO/scripts/v5usb_share.py" $T/v5usb-sys.sock $T/v5usb-sys-shared.sock $T/v5usb-host.sock >&2 &
 helpers+=($!)
+# --gdb: v5gdb_bridge.py takes the user port, serves GDB and the program's
+# output on TCP, and passes the port on to its usual host side unchanged
+USER_SOCK=$T/v5usb-user.sock
+if [ -n "$gdb_port" ]; then
+  [ "$gdb_port" = auto ] && gdb_port=$((35537 + id))
+  case $gdb_port in ''|*[!0-9]*) echo "--gdb must be a port number or auto" >&2; exit 2 ;; esac
+  rm -f $T/v5usb-user-out.sock
+  python3 -I "$REPO/scripts/v5gdb_bridge.py" $T/v5usb-user.sock $T/v5usb-user-out.sock "$gdb_port" >&2 &
+  helpers+=($!)
+  USER_SOCK=$T/v5usb-user-out.sock
+fi
 if [ "$usb" = ip ]; then
   (wait_for_sock $T/v5usb-sys-shared.sock &&
-   exec python3 -I "$REPO/scripts/v5usb_usbip.py" $T/v5usb-sys-shared.sock $T/v5usb-user.sock \
+   exec python3 -I "$REPO/scripts/v5usb_usbip.py" $T/v5usb-sys-shared.sock "$USER_SOCK" \
      --port $USBIP_PORT --serial V5SIM$id >&2) &
   helpers+=($!)
   if [ -x "$USBIP_EXE" ]; then
@@ -280,7 +298,7 @@ fi
 if [ "$usb" = 1 ]; then
   (wait_for_sock $T/v5usb-sys-shared.sock &&
    exec python3 -I "$REPO/scripts/v5usb_pty.py" \
-     $T/v5usb-sys-shared.sock=$T/ttyV5sys $T/v5usb-user.sock=$T/ttyV5user >&2) &
+     $T/v5usb-sys-shared.sock=$T/ttyV5sys "$USER_SOCK=$T/ttyV5user" >&2) &
   helpers+=($!)
 fi
 if [ -n "$run_file" ]; then
@@ -295,6 +313,7 @@ info="instance $id: QMP $QMP, log $CONSOLE_LOG"
 [ "$usb" = 1 ] && info="$info, USB $T/ttyV5sys $T/ttyV5user"
 [ "$usb" = ip ] && info="$info, USB/IP localhost:$USBIP_PORT busid 1-1"
 info="$info, upload $T/v5usb-host.sock"
+[ -n "$gdb_port" ] && info="$info, GDB localhost:$gdb_port"
 echo "[v5brain] $info" >&2
 # The brain's serial console goes to stdio (this window, if any) and is also
 # logged to $CONSOLE_LOG so `v5sim log` can follow it live without a window.
